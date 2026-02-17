@@ -11,7 +11,7 @@ from datetime import datetime
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Amazon Support Unified Dashboard",
+    page_title="Amazon Support Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -754,3 +754,4 @@ with tabs[0]:
 # Footer
 st.markdown("---")
 st.caption(f"Amazon Support Unified App | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
