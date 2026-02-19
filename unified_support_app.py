@@ -11,7 +11,7 @@ from datetime import datetime
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Amazon Support Dashboard",
+    page_title="Amazon Support Unified Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -245,6 +245,7 @@ freebies_file = st.sidebar.file_uploader("Freebies Orders (TXT)", type=["txt"], 
 ncemi_payment_file = st.sidebar.file_uploader("NCEMI Payment (CSV)", type=["csv"], key="ncemi_pay_up")
 ncemi_support_files = st.sidebar.file_uploader("NCEMI B2B/B2C Files", type=["csv", "zip"], accept_multiple_files=True, key="ncemi_sup_up")
 adv_files = st.sidebar.file_uploader("Advertisement Invoices (PDF)", type=["pdf"], accept_multiple_files=True, key="adv_up")
+rev_log_file = st.sidebar.file_uploader("Replacement Logistic (CSV)", type=["csv"], key="rev_log_up")
 
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
@@ -260,7 +261,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files):
+if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file):
     st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
     st.markdown("""
     ### 📂 Expected Files:
@@ -272,7 +273,7 @@ if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_paymen
     """)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic"])
 
 combined_results = []
 
@@ -696,6 +697,108 @@ with tabs[5]:
         st.warning("Please upload Advertisement PDF invoices.")
 
 # ==========================================
+# TAB 7: REPLACEMENT LOGISTIC
+# ==========================================
+with tabs[6]:
+    st.header("🔄 Replacement Logistic Analysis")
+    if rev_log_file and pm_file:
+        with st.spinner("Processing Replacement Logistic files..."):
+            # 1. Read CSV with header at row 12 (0-indexed: 11)
+            rl_df = pd.read_csv(rev_log_file, header=11, low_memory=False)
+
+            # 2. Filter: type == "Order" AND product sales == 0
+            rl_df = rl_df[
+                (rl_df["type"].str.strip().str.lower() == "order") &
+                (pd.to_numeric(rl_df["product sales"], errors="coerce") == 0)
+            ]
+
+            # 3. Drop rows where SKU is null/empty
+            rl_df = rl_df[
+                rl_df["Sku"].notna() &
+                (rl_df["Sku"].astype(str).str.strip() != "")
+            ]
+
+            # 4. Clean SKU columns for matching
+            rl_df["Sku"] = rl_df["Sku"].astype(str).str.strip().str.replace(".0", "", regex=False)
+            
+            # Map Brand and Brand Manager from PM
+            pm_full_rl = pd.read_excel(pm_file)
+            sku_col_pm = pm_full_rl.columns[2] # Based on NCEMI and Reverse_Logistic logic
+            mgr_col_pm = pm_full_rl.columns[4]
+            brand_col_pm = pm_full_rl.columns[6]
+            
+            pm_full_rl[sku_col_pm] = pm_full_rl[sku_col_pm].astype(str).str.strip().str.replace(".0", "", regex=False)
+            
+            brand_manager_map = pm_full_rl.set_index(sku_col_pm)[mgr_col_pm].to_dict()
+            brand_map_rl = pm_full_rl.set_index(sku_col_pm)[brand_col_pm].to_dict()
+
+            rl_df["Brand Manager"] = rl_df["Sku"].map(brand_manager_map)
+            rl_df["Brand"] = rl_df["Sku"].map(brand_map_rl)
+
+            # 5. Clean and convert total & quantity columns
+            rl_df["total"] = (
+                rl_df["total"]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.strip()
+            )
+            rl_df["total"] = pd.to_numeric(rl_df["total"], errors="coerce").fillna(0)
+            rl_df["quantity"] = pd.to_numeric(rl_df["quantity"], errors="coerce").fillna(0)
+
+        st.success(f"✅ Processed **{len(rl_df):,}** replacement logistic transactions")
+
+        # Sub-tabs for Replacement Logistic
+        rl_tab1, rl_tab2, rl_tab3 = st.tabs(["📊 Pivot Table Report", "👥 Brand Manager Analysis", "📋 Raw Data"])
+
+        with rl_tab1:
+            st.subheader("Brand-wise Replacement Logistic Summary")
+            rl_pivot = rl_df.groupby("Brand").agg({
+                "quantity": "sum",
+                "total": "sum"
+            }).reset_index()
+            rl_pivot = rl_pivot.sort_values(by="total", ascending=True)
+            
+            # Grand Total
+            rl_summary = pd.DataFrame({
+                "Brand": ["Grand Total"],
+                "quantity": [rl_pivot["quantity"].sum()],
+                "total": [rl_pivot["total"].sum()]
+            })
+            rl_pivot_disp = pd.concat([rl_pivot, rl_summary], ignore_index=True)
+            st.dataframe(
+                rl_pivot_disp.style.format({"total": format_currency, "quantity": "{:,.0f}"})
+                .background_gradient(subset=["total"], cmap="YlOrRd"),
+                use_container_width=True
+            )
+            st.download_button("📥 Download Brand Summary", convert_to_excel(rl_pivot_disp, 'RL Brand Pivot'), "rl_brand_summary.xlsx")
+            
+            combined_results.append(rl_pivot[["Brand", "total"]].rename(columns={"total": "Replacement Logistic"}))
+
+        with rl_tab2:
+            st.subheader("Brand Manager-wise Replacement Logistic Summary")
+            rl_pivot_mgr = rl_df.groupby("Brand Manager").agg({
+                "quantity": "sum",
+                "total": "sum"
+            }).reset_index()
+            rl_pivot_mgr = rl_pivot_mgr.sort_values(by="total", ascending=True)
+            
+            rl_mgr_summary = pd.DataFrame({
+                "Brand Manager": ["Grand Total"],
+                "quantity": [rl_pivot_mgr["quantity"].sum()],
+                "total": [rl_pivot_mgr["total"].sum()]
+            })
+            rl_mgr_disp = pd.concat([rl_pivot_mgr, rl_mgr_summary], ignore_index=True)
+            st.dataframe(rl_mgr_disp.style.format({"total": format_currency, "quantity": "{:,.0f}"}), use_container_width=True)
+            st.download_button("📥 Download Manager Summary", convert_to_excel(rl_mgr_disp, 'RL Manager Pivot'), "rl_manager_summary.xlsx")
+
+        with rl_tab3:
+            st.subheader("Filtered Transaction Data")
+            st.dataframe(rl_df, use_container_width=True)
+            st.download_button("📥 Download Raw Data", convert_to_excel(rl_df, 'RL Raw Data'), "rl_raw_data.xlsx")
+    else:
+        st.warning("Please upload both Replacement Logistic CSV and PM file.")
+
+# ==========================================
 # FINAL COMBINED REPORT POPULATION
 # ==========================================
 with tabs[0]:
@@ -754,4 +857,3 @@ with tabs[0]:
 # Footer
 st.markdown("---")
 st.caption(f"Amazon Support Unified App | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
