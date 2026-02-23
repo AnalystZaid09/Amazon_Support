@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Amazon Support Dashboard",
+    page_title="Amazon Support Unified Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -349,6 +349,16 @@ st.sidebar.subheader("📦 Tramontina Support")
 tramontina_orders_file = st.sidebar.file_uploader("Tramontina Orders (Excel)", type=["xlsx", "xls"], key="tramo_orders_up")
 tramontina_bau_file = st.sidebar.file_uploader("Tramontina BAU Offer (Excel)", type=["xlsx", "xls"], key="tramo_bau_up")
 
+st.sidebar.markdown("---")
+
+st.sidebar.subheader("🏭 Bergner Secondary")
+bergner_sec_orders_file = st.sidebar.file_uploader("Bergner Sec Orders (TXT)", type=["txt", "tsv", "csv"], key="bergner_sec_orders_up")
+bergner_sec_file = st.sidebar.file_uploader("Bergner Sec Support File (Excel)", type=["xlsx", "xls"], key="bergner_sec_up")
+
+st.sidebar.subheader("📦 Tramontina Secondary")
+tramontina_sec_orders_file = st.sidebar.file_uploader("Tramontina Sec Orders (TXT)", type=["txt", "tsv", "csv"], key="tramo_sec_orders_up")
+tramontina_sec_file = st.sidebar.file_uploader("Tramontina Sec Support File (Excel)", type=["xlsx", "xls"], key="tramo_sec_up")
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -363,7 +373,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zip or dyson_b2c_zip or tramontina_orders_file):
+if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zip or dyson_b2c_zip or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file):
     st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
     st.markdown("""
     ### 📂 Expected Files:
@@ -375,10 +385,12 @@ if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_paymen
     - **Bergner**: Orders Excel + Bergner Support Excel.
     - **Dyson**: B2B/B2C ZIP reports + Dyson Promo Excel.
     - **Tramontina**: Orders Excel + BAU Offer Excel (3 sheets).
+    - **Bergner Secondary**: Orders TXT + Bergner Support Excel.
+    - **Tramontina Secondary**: Orders TXT + Tramontina Support Excel.
     """)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary"])
 
 combined_results = []
 
@@ -1197,6 +1209,182 @@ with tabs[9]:
             st.error(f"❌ Error processing Tramontina data: {str(e)}")
     else:
         st.warning("Please upload Tramontina Orders, PM file, and BAU Offer Excel.")
+
+# ==========================================
+# TAB 11: BERGNER SECONDARY
+# ==========================================
+with tabs[10]:
+    st.header("🏭 Bergner Secondary Support")
+    if bergner_sec_orders_file and pm_file and bergner_sec_file:
+        try:
+            with st.spinner("Processing Bergner Secondary data..."):
+                # Load files
+                bs_bergner = pd.read_excel(bergner_sec_file, header=1)
+                bs_df = pd.read_csv(bergner_sec_orders_file, sep="\t", low_memory=False)
+                bs_pm = pd.read_excel(pm_file)
+
+                # Clean orders
+                if 'product-name' in bs_df.columns:
+                    bs_df = bs_df[bs_df['product-name'] != '-']
+                bs_df = bs_df[bs_df['item-price'].notna() & (bs_df['item-price'].astype(str).str.strip() != '')]
+
+                # Merge Brand from PM
+                bs_df['asin'] = bs_df['asin'].astype(str)
+                bs_pm['ASIN'] = bs_pm['ASIN'].astype(str)
+                bs_df = bs_df.merge(bs_pm[['ASIN', 'Brand']], left_on='asin', right_on='ASIN', how='left')
+                bs_df.drop(columns=['ASIN'], inplace=True)
+
+                # Filter Bergner orders
+                bs_df_bergner = bs_df[bs_df['Brand'] == 'Bergner'].copy()
+
+                # Build pivot of quantity by ASIN & item-status
+                bs_pivot = pd.pivot_table(bs_df, index='asin', columns='item-status', values='quantity',
+                                          aggfunc='sum', fill_value=0)
+                exclude_status = ['Cancelled']
+                bs_pivot['Net Quantity'] = bs_pivot.loc[:, ~bs_pivot.columns.isin(exclude_status)].sum(axis=1)
+                bs_pivot.columns.name = None
+                bs_pivot.reset_index(inplace=True)
+                bs_pivot.columns = bs_pivot.columns.str.strip()
+
+                # Merge into Bergner file
+                bs_bergner['ASIN'] = bs_bergner['ASIN'].astype(str)
+                bs_pivot['asin'] = bs_pivot['asin'].astype(str)
+                bs_bergner = bs_bergner.merge(bs_pivot[['asin', 'Net Quantity']], left_on='ASIN', right_on='asin', how='left')
+                bs_bergner.rename(columns={'Net Quantity': 'Month Order Count'}, inplace=True)
+                bs_bergner.drop(columns=['asin'], inplace=True)
+
+                # Calculate Extra P&L
+                bs_bergner['Month Order Count'] = pd.to_numeric(bs_bergner['Month Order Count'], errors='coerce').fillna(0)
+                bs_bergner['P/L'] = pd.to_numeric(bs_bergner['P/L'], errors='coerce').fillna(0)
+                bs_bergner['Extra P&L'] = (bs_bergner['Month Order Count'] * bs_bergner['P/L']).round(2)
+
+                # Grand Total row
+                bs_total_extra_pl = bs_bergner['Extra P&L'].sum()
+                bs_total_row = pd.DataFrame({col: [''] for col in bs_bergner.columns})
+                bs_total_row.iloc[0, bs_bergner.columns.get_loc('ASIN')] = 'Grand Total'
+                bs_total_row['Extra P&L'] = bs_total_extra_pl
+                bs_bergner = pd.concat([bs_bergner, bs_total_row], ignore_index=True)
+
+            st.success(f"✅ Bergner Secondary processed! Grand Total Extra P&L: ₹{bs_total_extra_pl:,.2f}")
+
+            # Sub-tabs
+            bs_tab1, bs_tab2 = st.tabs(["📋 Bergner Orders", "📊 Bergner File with P&L"])
+
+            with bs_tab1:
+                st.subheader("Bergner Filtered Orders")
+                st.caption(f"{len(bs_df_bergner):,} rows")
+                st.dataframe(bs_df_bergner, use_container_width=True, height=400)
+                st.download_button("📥 Download Bergner Orders", convert_to_excel(bs_df_bergner, 'Bergner Orders'), "bergner_sec_orders.xlsx")
+
+            with bs_tab2:
+                st.subheader("Bergner File with Month Order Count & Extra P&L")
+                st.caption(f"Grand Total Extra P&L: ₹{bs_total_extra_pl:,.2f}")
+                st.dataframe(bs_bergner, use_container_width=True, height=400)
+                st.download_button("📥 Download Bergner Support File", convert_to_excel(bs_bergner, 'Bergner File'), "bergner_sec_file.xlsx")
+
+            # Combined download
+            bs_combined_buf = io.BytesIO()
+            with pd.ExcelWriter(bs_combined_buf, engine='xlsxwriter') as writer:
+                bs_df_bergner.to_excel(writer, index=False, sheet_name='Bergner Orders')
+                bs_bergner.to_excel(writer, index=False, sheet_name='Bergner File')
+            st.download_button("📥 Download Both Reports", bs_combined_buf.getvalue(), "bergner_sec_combined.xlsx")
+
+            # For Combined Summary
+            bs_combined_df = pd.DataFrame({"Brand": ["Bergner (Secondary)"], "Bergner Sec Extra P&L": [bs_total_extra_pl]})
+            combined_results.append(bs_combined_df)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Bergner Secondary: {str(e)}")
+    else:
+        st.warning("Please upload Bergner Sec Orders TXT, PM file, and Bergner Sec Support Excel.")
+
+# ==========================================
+# TAB 12: TRAMONTINA SECONDARY
+# ==========================================
+with tabs[11]:
+    st.header("📦 Tramontina Secondary Support")
+    if tramontina_sec_orders_file and pm_file and tramontina_sec_file:
+        try:
+            with st.spinner("Processing Tramontina Secondary data..."):
+                # Load files
+                ts_tra = pd.read_excel(tramontina_sec_file)
+                ts_df = pd.read_csv(tramontina_sec_orders_file, sep="\t", low_memory=False)
+                ts_pm = pd.read_excel(pm_file)
+
+                # Clean orders
+                if 'product-name' in ts_df.columns:
+                    ts_df = ts_df[ts_df['product-name'] != '-']
+                ts_df = ts_df[ts_df['item-price'].notna() & (ts_df['item-price'].astype(str).str.strip() != '')]
+
+                # Merge Brand from PM
+                ts_df['asin'] = ts_df['asin'].astype(str)
+                ts_pm['ASIN'] = ts_pm['ASIN'].astype(str)
+                ts_df = ts_df.merge(ts_pm[['ASIN', 'Brand']], left_on='asin', right_on='ASIN', how='left')
+                ts_df.drop(columns=['ASIN'], inplace=True)
+
+                # Filter Tramontina orders
+                ts_df_tra = ts_df[ts_df['Brand'] == 'Tramontina'].copy()
+
+                # Build pivot of quantity by ASIN & item-status
+                ts_pivot = pd.pivot_table(ts_df, index='asin', columns='item-status', values='quantity',
+                                          aggfunc='sum', fill_value=0)
+                exclude_status = ['Cancelled']
+                ts_pivot['Net Quantity'] = ts_pivot.loc[:, ~ts_pivot.columns.isin(exclude_status)].sum(axis=1)
+                ts_pivot.columns.name = None
+                ts_pivot.reset_index(inplace=True)
+                ts_pivot.columns = ts_pivot.columns.str.strip()
+
+                # Merge into Tramontina file
+                ts_tra['ASIN'] = ts_tra['ASIN'].astype(str)
+                ts_pivot['asin'] = ts_pivot['asin'].astype(str)
+                ts_tra = ts_tra.merge(ts_pivot[['asin', 'Net Quantity']], left_on='ASIN', right_on='asin', how='left')
+                ts_tra.rename(columns={'Net Quantity': 'Month Order Count'}, inplace=True)
+                ts_tra.drop(columns=['asin'], inplace=True)
+
+                # Calculate Extra P&L
+                ts_tra['Month Order Count'] = pd.to_numeric(ts_tra['Month Order Count'], errors='coerce').fillna(0)
+                ts_tra['P/l'] = pd.to_numeric(ts_tra['P/l'], errors='coerce').fillna(0)
+                ts_tra['Extra P&L'] = (ts_tra['Month Order Count'] * ts_tra['P/l']).round(2)
+
+                # Grand Total row
+                ts_total_extra_pl = ts_tra['Extra P&L'].sum()
+                ts_total_row = pd.DataFrame({col: [''] for col in ts_tra.columns})
+                ts_total_row.iloc[0, ts_tra.columns.get_loc('ASIN')] = 'Grand Total'
+                ts_total_row['Extra P&L'] = ts_total_extra_pl
+                ts_tra = pd.concat([ts_tra, ts_total_row], ignore_index=True)
+
+            st.success(f"✅ Tramontina Secondary processed! Grand Total Extra P&L: ₹{ts_total_extra_pl:,.2f}")
+
+            # Sub-tabs
+            ts_tab1, ts_tab2 = st.tabs(["📋 Tramontina Orders", "📊 Tramontina File with P&L"])
+
+            with ts_tab1:
+                st.subheader("Tramontina Filtered Orders")
+                st.caption(f"{len(ts_df_tra):,} rows")
+                st.dataframe(ts_df_tra, use_container_width=True, height=400)
+                st.download_button("📥 Download Tramontina Orders", convert_to_excel(ts_df_tra, 'Tramontina Orders'), "tramontina_sec_orders.xlsx")
+
+            with ts_tab2:
+                st.subheader("Tramontina File with Month Order Count & Extra P&L")
+                st.caption(f"Grand Total Extra P&L: ₹{ts_total_extra_pl:,.2f}")
+                st.dataframe(ts_tra, use_container_width=True, height=400)
+                st.download_button("📥 Download Tramontina Support File", convert_to_excel(ts_tra, 'Tramontina File'), "tramontina_sec_file.xlsx")
+
+            # Combined download
+            ts_combined_buf = io.BytesIO()
+            with pd.ExcelWriter(ts_combined_buf, engine='xlsxwriter') as writer:
+                ts_df_tra.to_excel(writer, index=False, sheet_name='Tramontina Orders')
+                ts_tra.to_excel(writer, index=False, sheet_name='Tramontina File')
+            st.download_button("📥 Download Both Reports", ts_combined_buf.getvalue(), "tramontina_sec_combined.xlsx")
+
+            # For Combined Summary
+            ts_combined_df = pd.DataFrame({"Brand": ["Tramontina (Secondary)"], "Tramontina Sec Extra P&L": [ts_total_extra_pl]})
+            combined_results.append(ts_combined_df)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Tramontina Secondary: {str(e)}")
+    else:
+        st.warning("Please upload Tramontina Sec Orders TXT, PM file, and Tramontina Sec Support Excel.")
 
 # ==========================================
 # FINAL COMBINED REPORT POPULATION
