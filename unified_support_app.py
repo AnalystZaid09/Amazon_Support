@@ -320,7 +320,7 @@ def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
 st.sidebar.title("📤 Data Upload Center")
 
 st.sidebar.subheader("💎 Essential Master Data")
-pm_file = st.sidebar.file_uploader("Product Master (PM)", type=["xlsx", "xls"], key="pm_global")
+pm_file = st.sidebar.file_uploader("Purchase Master (PM)", type=["xlsx", "xls"], key="pm_global")
 portfolio_file = st.sidebar.file_uploader("Portfolio Report (Ads Mapping)", type=["xlsx", "xls"], key="portfolio_global")
 
 st.sidebar.markdown("---")
@@ -1445,3 +1445,4 @@ with tabs[0]:
 # Footer
 st.markdown("---")
 st.caption(f"Amazon Support Unified App | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
