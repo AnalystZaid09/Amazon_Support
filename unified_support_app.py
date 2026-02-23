@@ -471,6 +471,229 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
+# ==========================================
+# FILE FORMAT INSTRUCTIONS
+# ==========================================
+with st.expander("📖 File Format Instructions — Click to see expected headers for all files", expanded=False):
+    st.markdown("### Required Column Headers for Each File")
+    st.markdown("Make sure your files have the following column headers (case-sensitive) before uploading.")
+
+    st.markdown("---")
+    st.markdown("#### 💎 Purchase Master (PM) — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `ASIN` | Amazon Standard Identification Number |
+| `Brand` | Brand name |
+| `Amazon Sku Name` | SKU name (used for Dyson mapping) |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🏷️ Coupon Orders — TXT (Tab-separated)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `product-name` | Product name |
+| `item-status` | Order status (Cancelled rows excluded) |
+| `promotion-ids` | Promotion identifiers (filtered for PLM) |
+| `item-promotion-discount` | Discount amount |
+| `quantity` | Order quantity |
+| `purchase-date` | Purchase date |
+| `ship-postal-code` | Shipping postal code |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🔄 Exchange Data — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `brand` | Brand name |
+| `order_day` | Order date |
+| `seller funding` | Seller funding amount |
+| `liquidator funding` | Liquidator funding amount |
+| `order_id` | Order identifier |
+| `buyback_category` | Exchange category |
+| `forward_flag_status` | Status flag |
+| `total_discount_claimed` | Total discount |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🎁 Freebies Orders — TXT (Tab-separated)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `product-name` | Product name |
+| `item-status` | Order status (Cancelled rows excluded) |
+| `promotion-ids` | Promotion identifiers (filtered for BOGO) |
+| `item-price` | Item price |
+| `quantity` | Order quantity |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 💳 NCEMI Payment — CSV")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `type` | Transaction type (Transfer / Service Fee) |
+| `Sku` | Product SKU |
+| `total` | Total amount |
+| `other transaction fees` | Transaction fees |
+| `other` | Other fees |
+    """)
+
+    st.markdown("#### 💳 NCEMI B2B/B2C — CSV or ZIP (containing CSV)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `Sku` | Product SKU |
+| `Asin` | Product ASIN |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 📢 Advertisement Invoices — PDF")
+    st.markdown("PDF invoices from Amazon Ads. No specific column headers needed — data is extracted automatically.")
+
+    st.markdown("#### 📢 Portfolio Report (Ads Mapping) — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| Any column containing `campaign` or `portfolio` | Campaign name for mapping |
+| Any column containing `brand` | Brand name |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🔄 Replacement Logistic — CSV (header at row 13)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `type` | Transaction type (filtered for 'Order') |
+| `Sku` | Product SKU |
+| `product sales` | Product sales amount (filtered for 0) |
+| `quantity` | Quantity |
+| `total` | Total amount |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🏭 Bergner Orders — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `product-name` | Product name |
+| `item-status` | Order status (Cancelled rows excluded) |
+| `item-price` | Item price |
+| `quantity` | Order quantity |
+    """)
+
+    st.markdown("#### 🏭 Bergner Support File — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `ASIN` | Amazon ASIN |
+| `P/L` | Profit/Loss per unit |
+| `Support Approved` | Approved support quantity |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🧮 Dyson B2B/B2C Report — ZIP (containing CSV)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `Sku` | Product SKU |
+| `Asin` | Product ASIN |
+| `Quantity` | Order quantity |
+| `Transaction Type` | Shipment / Refund / Cancel |
+| `Order Id` | Order identifier |
+| `Invoice Date` | Invoice date (used for month filtering) |
+    """)
+
+    st.markdown("#### 🧮 Dyson Promo — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `ASIN` | Amazon ASIN |
+| `SKU Code` | SKU code |
+| `SSP` | Standard Selling Price |
+| `Cons Promo` | Consumer Promo price |
+| `Margin` | Margin (decimal, e.g. 0.10 for 10%) |
+    """)
+
+    st.markdown("#### 🧮 Dyson Invoice — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `Material_Cd` | Material code |
+| `Qty` | Quantity |
+| `Total_Val` | Total value |
+    """)
+
+    st.markdown("#### 🧮 Dyson Invoice Promo CN — Excel (.xlsx)")
+    st.markdown("""
+| Column Position | Description |
+|--------|-------------|
+| Column D (4th column) | Lookup key (Material code) |
+| Column L (12th column) | Consumer Promo value to return |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 📦 Tramontina Orders — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `product-name` or `product_name` | Product name |
+| `item-status` | Order status (Cancelled rows excluded) |
+| `item-price` | Item price |
+| `quantity` | Order quantity |
+    """)
+
+    st.markdown("#### 📦 Tramontina BAU Offer — Excel (.xlsx, 3 sheets)")
+    st.markdown("""
+| Sheet Name | Key Columns |
+|--------|-------------|
+| `Amazon BAU Price` | `ASIN`, `P/L` |
+| `Freebie` | `ASIN`, `P/L` |
+| `Coupon` | `ASIN`, `P/L` |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 🏭 Bergner Secondary Orders — TXT (Tab-separated)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `quantity` | Order quantity |
+| `item-status` | Order status (Cancelled rows excluded) |
+    """)
+
+    st.markdown("#### 🏭 Bergner Secondary Support — Excel (.xlsx, header at row 3)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `ASIN` | Amazon ASIN |
+| `P/L` | Profit/Loss per unit |
+    """)
+
+    st.markdown("---")
+    st.markdown("#### 📦 Tramontina Secondary Orders — TXT (Tab-separated)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `asin` | Product ASIN |
+| `quantity` | Order quantity |
+| `item-status` | Order status (Cancelled rows excluded) |
+    """)
+
+    st.markdown("#### 📦 Tramontina Secondary Support — Excel (.xlsx)")
+    st.markdown("""
+| Column | Description |
+|--------|-------------|
+| `ASIN` | Amazon ASIN |
+| `P/l` | Profit/Loss per unit |
+    """)
+
 if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file):
     st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
     st.markdown("""
