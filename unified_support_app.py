@@ -239,21 +239,26 @@ def fill_sku_from_report(payment_order, report_df):
 def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
     """Process B2B or B2C Dyson data and calculate support"""
     try:
+        # Read report from ZIP
         with zipfile.ZipFile(zip_file) as z:
             csv_name = [name for name in z.namelist() if name.endswith('.csv')][0]
             with z.open(csv_name) as f:
                 data = pd.read_csv(f)
 
+        # Read PM file and Dyson Promo file
         PM = pd.read_excel(pm_file)
         Dyson_Promo = pd.read_excel(dyson_promo_file)
 
+        # Clean and prepare data
         data["Asin"] = data["Asin"].astype(str).str.strip()
         PM["ASIN"] = PM["ASIN"].astype(str).str.strip()
         Dyson_Promo["ASIN"] = Dyson_Promo["ASIN"].astype(str).str.strip()
 
+        # Map Brand from PM file
         brand_map = PM.groupby("ASIN", as_index=True)["Brand"].first()
         data["Brand"] = data["Asin"].map(brand_map)
 
+        # Move Brand column after Sku if Sku exists
         cols = list(data.columns)
         if "Sku" in cols:
             sku_idx = cols.index("Sku")
@@ -261,55 +266,109 @@ def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
             cols.insert(sku_idx + 1, "Brand")
             data = data[cols]
 
+        # Filter Dyson brand - handle NaN values
         dyson_data = data[data["Brand"].notna() & (data["Brand"].astype(str).str.strip().str.upper() == "DYSON")].copy()
 
-        cancel_data = dyson_data[dyson_data["Transaction Type"].astype(str).str.strip().str.upper() == "CANCEL"]
+        # Identify cancelled orders
+        cancel_data = dyson_data[
+            dyson_data["Transaction Type"].astype(str).str.strip().str.upper() == "CANCEL"
+        ]
         cancel_order_set = set(cancel_data["Order Id"])
 
-        dyson_data["Order Status"] = dyson_data["Order Id"].apply(lambda x: x if x in cancel_order_set else np.nan)
+        # Add Order Status
+        dyson_data["Order Status"] = dyson_data["Order Id"].apply(
+            lambda x: x if x in cancel_order_set else np.nan
+        )
 
+        # Move Order Status after Order Id
         cols = list(dyson_data.columns)
         order_idx = cols.index("Order Id")
         cols.remove("Order Status")
         cols.insert(order_idx + 1, "Order Status")
         dyson_data = dyson_data[cols]
 
-        dyson_data["Order Status"] = np.where(dyson_data["Order Status"].isna(), dyson_data["Transaction Type"], "Cancel")
-
-        pivot = pd.pivot_table(dyson_data, index="Asin", columns="Order Status", values="Quantity",
-                               aggfunc="sum", fill_value=0, margins=True, margins_name="Grand Total")
-        result = pivot.reset_index()
-
-        result["Net Sale / Actual Shipment"] = result.get("Shipment", 0) - result.get("Refund", 0)
-
-        for col_name, promo_col in [("SKU CODE", "SKU Code"), ("SSP", "SSP"), ("Cons Promo", "Cons Promo")]:
-            result[col_name] = result["Asin"].map(Dyson_Promo.groupby("ASIN", as_index=True)[promo_col].first())
-
-        result["Margin %"] = result["Asin"].map(Dyson_Promo.groupby("ASIN", as_index=True)["Margin"].first()).mul(100)
-        result["Support"] = (result["SSP"] - result["Cons Promo"]) * (1 - result["Margin %"] / 100)
-        result["SUPPORT AS PER NET SALE"] = (
-            pd.to_numeric(result["Support"], errors='coerce').fillna(0)
-            * pd.to_numeric(result["Net Sale / Actual Shipment"], errors='coerce').fillna(0)
+        # Replace NaN with Transaction Type
+        dyson_data["Order Status"] = np.where(
+            dyson_data["Order Status"].isna(),
+            dyson_data["Transaction Type"],
+            "Cancel"
         )
 
-        mask = result["Asin"] != "Grand Total"
-        for col in result.columns:
-            if col not in ["Asin", "SKU CODE"]:
-                result.loc[mask, col] = pd.to_numeric(result.loc[mask, col], errors='coerce').fillna(0)
+        # Create pivot table
+        pivot_order_status = pd.pivot_table(
+            dyson_data,
+            index="Asin",
+            columns="Order Status",
+            values="Quantity",
+            aggfunc="sum",
+            fill_value=0,
+            margins=True,
+            margins_name="Grand Total"
+        )
 
-        df_no_gt = result[result["Asin"] != "Grand Total"].copy()
+        pivot_order_status_index = pivot_order_status.reset_index()
+
+        # Calculate Net Sale
+        pivot_order_status_index["Net Sale / Actual Shipment"] = (
+            pivot_order_status_index.get("Shipment", 0) -
+            pivot_order_status_index.get("Refund", 0)
+        )
+
+        # Map SKU, SSP, Cons Promo, Margin from Dyson_Promo file
+        sku_map = Dyson_Promo.groupby("ASIN", as_index=True)["SKU Code"].first()
+        ssp_map = Dyson_Promo.groupby("ASIN", as_index=True)["SSP"].first()
+        cons_map = Dyson_Promo.groupby("ASIN", as_index=True)["Cons Promo"].first()
+        margin_map = Dyson_Promo.groupby("ASIN", as_index=True)["Margin"].first()
+
+        pivot_order_status_index["SKU CODE"] = pivot_order_status_index["Asin"].map(sku_map)
+        pivot_order_status_index["SSP"] = pivot_order_status_index["Asin"].map(ssp_map)
+        pivot_order_status_index["Cons Promo"] = pivot_order_status_index["Asin"].map(cons_map)
+        pivot_order_status_index["Margin %"] = (
+            pivot_order_status_index["Asin"].map(margin_map).mul(100)
+        )
+
+        # Calculate Support
+        pivot_order_status_index["Support"] = (
+            (pivot_order_status_index["SSP"] - pivot_order_status_index["Cons Promo"])
+            * (1 - pivot_order_status_index["Margin %"] / 100)
+        )
+
+        # Calculate Support as per Net Sale
+        pivot_order_status_index["SUPPORT AS PER NET SALE"] = (
+            pd.to_numeric(pivot_order_status_index["Support"], errors='coerce').fillna(0)
+            * pd.to_numeric(pivot_order_status_index["Net Sale / Actual Shipment"], errors='coerce').fillna(0)
+        )
+
+        # Fill NaN with 0 except for Grand Total row
+        mask = pivot_order_status_index["Asin"] != "Grand Total"
+        for col in pivot_order_status_index.columns:
+            if col not in ["Asin", "SKU CODE", "Order Status"]:
+                pivot_order_status_index.loc[mask, col] = pd.to_numeric(
+                    pivot_order_status_index.loc[mask, col], errors='coerce'
+                ).fillna(0)
+
+        # Recalculate Grand Total
+        df_no_gt = pivot_order_status_index[
+            pivot_order_status_index["Asin"] != "Grand Total"
+        ].copy()
+
         exclude_cols = ["Asin", "SKU CODE"]
         cols_to_sum = [c for c in df_no_gt.columns if c not in exclude_cols]
+
         df_no_gt[cols_to_sum] = df_no_gt[cols_to_sum].apply(pd.to_numeric, errors="coerce")
 
         grand_total = df_no_gt[cols_to_sum].sum().to_frame().T
         grand_total["Asin"] = "Grand Total"
         grand_total["SKU CODE"] = ""
-        grand_total = grand_total[result.columns]
+        grand_total = grand_total[pivot_order_status_index.columns]
 
-        result = pd.concat([df_no_gt, grand_total], ignore_index=True)
-        result["SKU CODE"] = result["SKU CODE"].astype(str)
-        return result
+        pivot_order_status_index = pd.concat([df_no_gt, grand_total], ignore_index=True)
+
+        # Convert SKU CODE to string to avoid Arrow serialization issues
+        pivot_order_status_index["SKU CODE"] = pivot_order_status_index["SKU CODE"].astype(str)
+
+        return pivot_order_status_index
+
     except Exception as e:
         st.error(f"Error processing Dyson data: {str(e)}")
         return None
@@ -320,7 +379,7 @@ def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
 st.sidebar.title("📤 Data Upload Center")
 
 st.sidebar.subheader("💎 Essential Master Data")
-pm_file = st.sidebar.file_uploader("Purchase Master (PM)", type=["xlsx", "xls"], key="pm_global")
+pm_file = st.sidebar.file_uploader("Product Master (PM)", type=["xlsx", "xls"], key="pm_global")
 portfolio_file = st.sidebar.file_uploader("Portfolio Report (Ads Mapping)", type=["xlsx", "xls"], key="portfolio_global")
 
 st.sidebar.markdown("---")
@@ -1445,4 +1504,3 @@ with tabs[0]:
 # Footer
 st.markdown("---")
 st.caption(f"Amazon Support Unified App | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
