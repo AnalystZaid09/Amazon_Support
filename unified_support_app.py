@@ -1,17 +1,22 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import io
 import re
 import zipfile
 import pypdf
 import pdfplumber
+import warnings
 from datetime import datetime
+from openpyxl.styles import Font, Alignment
+
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 # ==========================================
 # PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Amazon Support Unified Dashboard",
+    page_title="Amazon Support Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -228,6 +233,88 @@ def fill_sku_from_report(payment_order, report_df):
     return payment_order
 
 # ==========================================
+# DYSON HELPERS
+# ==========================================
+
+def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
+    """Process B2B or B2C Dyson data and calculate support"""
+    try:
+        with zipfile.ZipFile(zip_file) as z:
+            csv_name = [name for name in z.namelist() if name.endswith('.csv')][0]
+            with z.open(csv_name) as f:
+                data = pd.read_csv(f)
+
+        PM = pd.read_excel(pm_file)
+        Dyson_Promo = pd.read_excel(dyson_promo_file)
+
+        data["Asin"] = data["Asin"].astype(str).str.strip()
+        PM["ASIN"] = PM["ASIN"].astype(str).str.strip()
+        Dyson_Promo["ASIN"] = Dyson_Promo["ASIN"].astype(str).str.strip()
+
+        brand_map = PM.groupby("ASIN", as_index=True)["Brand"].first()
+        data["Brand"] = data["Asin"].map(brand_map)
+
+        cols = list(data.columns)
+        if "Sku" in cols:
+            sku_idx = cols.index("Sku")
+            cols.remove("Brand")
+            cols.insert(sku_idx + 1, "Brand")
+            data = data[cols]
+
+        dyson_data = data[data["Brand"].notna() & (data["Brand"].astype(str).str.strip().str.upper() == "DYSON")].copy()
+
+        cancel_data = dyson_data[dyson_data["Transaction Type"].astype(str).str.strip().str.upper() == "CANCEL"]
+        cancel_order_set = set(cancel_data["Order Id"])
+
+        dyson_data["Order Status"] = dyson_data["Order Id"].apply(lambda x: x if x in cancel_order_set else np.nan)
+
+        cols = list(dyson_data.columns)
+        order_idx = cols.index("Order Id")
+        cols.remove("Order Status")
+        cols.insert(order_idx + 1, "Order Status")
+        dyson_data = dyson_data[cols]
+
+        dyson_data["Order Status"] = np.where(dyson_data["Order Status"].isna(), dyson_data["Transaction Type"], "Cancel")
+
+        pivot = pd.pivot_table(dyson_data, index="Asin", columns="Order Status", values="Quantity",
+                               aggfunc="sum", fill_value=0, margins=True, margins_name="Grand Total")
+        result = pivot.reset_index()
+
+        result["Net Sale / Actual Shipment"] = result.get("Shipment", 0) - result.get("Refund", 0)
+
+        for col_name, promo_col in [("SKU CODE", "SKU Code"), ("SSP", "SSP"), ("Cons Promo", "Cons Promo")]:
+            result[col_name] = result["Asin"].map(Dyson_Promo.groupby("ASIN", as_index=True)[promo_col].first())
+
+        result["Margin %"] = result["Asin"].map(Dyson_Promo.groupby("ASIN", as_index=True)["Margin"].first()).mul(100)
+        result["Support"] = (result["SSP"] - result["Cons Promo"]) * (1 - result["Margin %"] / 100)
+        result["SUPPORT AS PER NET SALE"] = (
+            pd.to_numeric(result["Support"], errors='coerce').fillna(0)
+            * pd.to_numeric(result["Net Sale / Actual Shipment"], errors='coerce').fillna(0)
+        )
+
+        mask = result["Asin"] != "Grand Total"
+        for col in result.columns:
+            if col not in ["Asin", "SKU CODE"]:
+                result.loc[mask, col] = pd.to_numeric(result.loc[mask, col], errors='coerce').fillna(0)
+
+        df_no_gt = result[result["Asin"] != "Grand Total"].copy()
+        exclude_cols = ["Asin", "SKU CODE"]
+        cols_to_sum = [c for c in df_no_gt.columns if c not in exclude_cols]
+        df_no_gt[cols_to_sum] = df_no_gt[cols_to_sum].apply(pd.to_numeric, errors="coerce")
+
+        grand_total = df_no_gt[cols_to_sum].sum().to_frame().T
+        grand_total["Asin"] = "Grand Total"
+        grand_total["SKU CODE"] = ""
+        grand_total = grand_total[result.columns]
+
+        result = pd.concat([df_no_gt, grand_total], ignore_index=True)
+        result["SKU CODE"] = result["SKU CODE"].astype(str)
+        return result
+    except Exception as e:
+        st.error(f"Error processing Dyson data: {str(e)}")
+        return None
+
+# ==========================================
 # SIDEBAR - GLOBAL UPLOADS
 # ==========================================
 st.sidebar.title("📤 Data Upload Center")
@@ -247,6 +334,21 @@ ncemi_support_files = st.sidebar.file_uploader("NCEMI B2B/B2C Files", type=["csv
 adv_files = st.sidebar.file_uploader("Advertisement Invoices (PDF)", type=["pdf"], accept_multiple_files=True, key="adv_up")
 rev_log_file = st.sidebar.file_uploader("Replacement Logistic (CSV)", type=["csv"], key="rev_log_up")
 
+st.sidebar.markdown("---")
+
+st.sidebar.subheader("🏭 Bergner Support")
+bergner_orders_file = st.sidebar.file_uploader("Bergner Orders (Excel)", type=["xlsx", "xls"], key="bergner_orders_up")
+bergner_support_file = st.sidebar.file_uploader("Bergner Support File (Excel)", type=["xlsx", "xls"], key="bergner_sup_up")
+
+st.sidebar.subheader("🧮 Dyson Support")
+dyson_b2b_zip = st.sidebar.file_uploader("Dyson B2B Report (ZIP)", type=["zip"], key="dyson_b2b_up")
+dyson_b2c_zip = st.sidebar.file_uploader("Dyson B2C Report (ZIP)", type=["zip"], key="dyson_b2c_up")
+dyson_promo_file = st.sidebar.file_uploader("Dyson Promo (Excel)", type=["xlsx", "xls"], key="dyson_promo_up")
+
+st.sidebar.subheader("📦 Tramontina Support")
+tramontina_orders_file = st.sidebar.file_uploader("Tramontina Orders (Excel)", type=["xlsx", "xls"], key="tramo_orders_up")
+tramontina_bau_file = st.sidebar.file_uploader("Tramontina BAU Offer (Excel)", type=["xlsx", "xls"], key="tramo_bau_up")
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -261,7 +363,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file):
+if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zip or dyson_b2c_zip or tramontina_orders_file):
     st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
     st.markdown("""
     ### 📂 Expected Files:
@@ -270,10 +372,13 @@ if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_paymen
     - **Exchange**: Excel with `brand` and `seller funding`.
     - **NCEMI**: Payment CSV + B2B/B2C order reports for SKU mapping.
     - **Advertisement**: PDF Invoices and Portfolio Excel for campaign mapping.
+    - **Bergner**: Orders Excel + Bergner Support Excel.
+    - **Dyson**: B2B/B2C ZIP reports + Dyson Promo Excel.
+    - **Tramontina**: Orders Excel + BAU Offer Excel (3 sheets).
     """)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina"])
 
 combined_results = []
 
@@ -797,6 +902,301 @@ with tabs[6]:
             st.download_button("📥 Download Raw Data", convert_to_excel(rl_df, 'RL Raw Data'), "rl_raw_data.xlsx")
     else:
         st.warning("Please upload both Replacement Logistic CSV and PM file.")
+
+# ==========================================
+# TAB 8: BERGNER
+# ==========================================
+with tabs[7]:
+    st.header("🏭 Bergner Support Analysis")
+    if bergner_orders_file and pm_file and bergner_support_file:
+        try:
+            with st.spinner("Processing Bergner data..."):
+                b_orders = pd.read_excel(bergner_orders_file)
+                b_pm = pd.read_excel(pm_file)
+                b_support = pd.read_excel(bergner_support_file, header=1)
+
+                # Map Brand
+                asin_brand_map = b_pm[["ASIN", "Brand"]].dropna().drop_duplicates(subset="ASIN").set_index("ASIN")["Brand"]
+                b_orders["Brand"] = b_orders["asin"].map(asin_brand_map)
+
+                # Reorder columns
+                b_cols = list(b_orders.columns)
+                b_cols.remove("Brand")
+                b_insert_after = "product-name" if "product-name" in b_cols else "product_name"
+                b_idx = b_cols.index(b_insert_after)
+                b_cols.insert(b_idx + 1, "Brand")
+                b_orders = b_orders[b_cols]
+
+                # Clean data
+                b_orders["item-price"] = b_orders["item-price"].replace(r"^\s*$", pd.NA, regex=True)
+                b_orders = b_orders.dropna(subset=["item-price"])
+                b_orders["item-price"] = pd.to_numeric(b_orders["item-price"], errors="coerce")
+                b_orders = b_orders.dropna(subset=["item-price"])
+                b_orders["quantity"] = pd.to_numeric(b_orders["quantity"], errors="coerce").fillna(0)
+
+                # Pivot quantities
+                pivot_qty = pd.pivot_table(b_orders, index=["Brand", "asin"], values="quantity", aggfunc="sum", fill_value=0).reset_index()
+                pivot_qty.rename(columns={"quantity": "order_qty"}, inplace=True)
+
+                # Map to Bergner Support
+                asin_qty_map = pivot_qty.drop_duplicates(subset="asin").set_index("asin")["order_qty"]
+                b_support["order qty"] = b_support["ASIN"].map(asin_qty_map)
+
+                # Calculate P/L
+                b_support["P/L"] = pd.to_numeric(b_support["P/L"], errors="coerce")
+                b_support["order qty"] = pd.to_numeric(b_support["order qty"], errors="coerce").fillna(0)
+                b_support["P/L on orders qty"] = (b_support["P/L"] * b_support["order qty"]).round(2)
+
+                # Support Value
+                if "Support Approved" in b_support.columns:
+                    b_support["Support Value"] = b_support["P/L"] * b_support["Support Approved"]
+
+                # Total row
+                total_pl = b_support["P/L on orders qty"].sum()
+                total_row = {col: "" for col in b_support.columns}
+                total_row["P/L on orders qty"] = total_pl
+                total_row["ASIN"] = "TOTAL"
+                b_support = pd.concat([b_support, pd.DataFrame([total_row])], ignore_index=True)
+
+            st.success(f"✅ Bergner data processed! Total P/L: ₹{total_pl:,.2f}")
+
+            # Sub-tabs
+            bg_tab1, bg_tab2, bg_tab3 = st.tabs(["📊 Bergner Support Analysis", "📋 Quantity Pivot", "📄 Processed Orders"])
+
+            with bg_tab1:
+                st.subheader("Bergner Support with P/L")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Total Orders", f"{len(b_orders):,}")
+                col2.metric("Unique ASINs", f"{len(pivot_qty):,}")
+                col3.metric("Total P/L on Orders", f"₹{total_pl:,.2f}")
+                st.dataframe(b_support, use_container_width=True, height=400)
+                st.download_button("📥 Download Bergner Support", convert_to_excel(b_support, 'Bergner Support'), "bergner_support.xlsx")
+
+            with bg_tab2:
+                st.subheader("Order Quantity by Brand and ASIN")
+                st.dataframe(pivot_qty, use_container_width=True, height=400)
+                st.download_button("📥 Download Quantity Pivot", convert_to_excel(pivot_qty, 'Order Quantities'), "bergner_quantities.xlsx")
+
+            with bg_tab3:
+                st.subheader("Processed Orders Data")
+                st.dataframe(b_orders.head(100), use_container_width=True, height=400)
+                st.info(f"Showing first 100 rows of {len(b_orders):,} total records")
+
+            # For Combined Summary - brand-wise P/L
+            b_brand_pl = b_support[b_support["ASIN"] != "TOTAL"].copy()
+            if "Brand" not in b_brand_pl.columns:
+                b_brand_pl["Brand"] = b_brand_pl["ASIN"].map(asin_brand_map)
+            b_brand_pivot = b_brand_pl.groupby("Brand")["P/L on orders qty"].sum().reset_index()
+            b_brand_pivot.columns = ["Brand", "Bergner P/L"]
+            b_brand_pivot["Bergner P/L"] = pd.to_numeric(b_brand_pivot["Bergner P/L"], errors="coerce").fillna(0)
+            combined_results.append(b_brand_pivot)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Bergner data: {str(e)}")
+    else:
+        st.warning("Please upload Bergner Orders, PM file, and Bergner Support Excel.")
+
+# ==========================================
+# TAB 9: DYSON
+# ==========================================
+with tabs[8]:
+    st.header("🧮 Dyson Support Analysis")
+    if dyson_promo_file and pm_file and (dyson_b2b_zip or dyson_b2c_zip):
+        dy_tab1, dy_tab2 = st.tabs(["📊 B2B Analysis", "📈 B2C Analysis"])
+
+        with dy_tab1:
+            st.subheader("B2B Support Calculation")
+            if dyson_b2b_zip:
+                with st.spinner("Processing B2B Dyson data..."):
+                    b2b_result = process_dyson_channel(dyson_b2b_zip, pm_file, dyson_promo_file)
+
+                if b2b_result is not None:
+                    # Metrics
+                    gt_row = b2b_result[b2b_result['Asin'] == 'Grand Total'].iloc[0]
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Shipments", f"{int(gt_row.get('Shipment', 0)):,}")
+                    col2.metric("Net Sales", f"{int(gt_row.get('Net Sale / Actual Shipment', 0)):,}")
+                    col3.metric("Total Cancels", f"{int(gt_row.get('Cancel', 0)):,}")
+                    col4.metric("Total Support", format_currency(gt_row.get('SUPPORT AS PER NET SALE', 0)))
+
+                    st.dataframe(b2b_result, use_container_width=True, height=400)
+                    st.download_button("📥 Download B2B Results", convert_to_excel(b2b_result, 'B2B Support'), "dyson_b2b_support.xlsx")
+
+                    # Add to combined
+                    b2b_support_total = gt_row.get('SUPPORT AS PER NET SALE', 0)
+                    dyson_b2b_combined = pd.DataFrame({"Brand": ["Dyson (B2B)"], "Dyson B2B Support": [b2b_support_total]})
+                    combined_results.append(dyson_b2b_combined)
+            else:
+                st.info("Upload Dyson B2B ZIP file to process B2B data.")
+
+        with dy_tab2:
+            st.subheader("B2C Support Calculation")
+            if dyson_b2c_zip:
+                with st.spinner("Processing B2C Dyson data..."):
+                    b2c_result = process_dyson_channel(dyson_b2c_zip, pm_file, dyson_promo_file)
+
+                if b2c_result is not None:
+                    gt_row = b2c_result[b2c_result['Asin'] == 'Grand Total'].iloc[0]
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Shipments", f"{int(gt_row.get('Shipment', 0)):,}")
+                    col2.metric("Net Sales", f"{int(gt_row.get('Net Sale / Actual Shipment', 0)):,}")
+                    col3.metric("Total Refunds", f"{int(gt_row.get('Refund', 0)):,}")
+                    col4.metric("Total Support", format_currency(gt_row.get('SUPPORT AS PER NET SALE', 0)))
+
+                    st.dataframe(b2c_result, use_container_width=True, height=400)
+                    st.download_button("📥 Download B2C Results", convert_to_excel(b2c_result, 'B2C Support'), "dyson_b2c_support.xlsx")
+
+                    # Add to combined
+                    b2c_support_total = gt_row.get('SUPPORT AS PER NET SALE', 0)
+                    dyson_b2c_combined = pd.DataFrame({"Brand": ["Dyson (B2C)"], "Dyson B2C Support": [b2c_support_total]})
+                    combined_results.append(dyson_b2c_combined)
+            else:
+                st.info("Upload Dyson B2C ZIP file to process B2C data.")
+    else:
+        st.warning("Please upload Dyson Promo Excel, PM file, and at least one B2B/B2C ZIP file.")
+
+# ==========================================
+# TAB 10: TRAMONTINA
+# ==========================================
+with tabs[9]:
+    st.header("📦 Tramontina Support Analysis")
+    if tramontina_orders_file and pm_file and tramontina_bau_file:
+        try:
+            with st.spinner("Processing Tramontina data..."):
+                t_orders = pd.read_excel(tramontina_orders_file)
+                t_pm = pd.read_excel(pm_file)
+                t_bau_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Amazon BAU Price")
+                t_freebie_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Freebie")
+                t_coupon_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Coupon")
+
+                # Map Brand
+                t_asin_brand_map = t_pm[["ASIN", "Brand"]].dropna().drop_duplicates(subset="ASIN").set_index("ASIN")["Brand"]
+                t_orders["Brand"] = t_orders["asin"].map(t_asin_brand_map)
+
+                # Reorder columns
+                t_cols = list(t_orders.columns)
+                t_cols.remove("Brand")
+                t_insert_after = "product-name" if "product-name" in t_cols else "product_name"
+                t_idx = t_cols.index(t_insert_after)
+                t_cols.insert(t_idx + 1, "Brand")
+                t_orders = t_orders[t_cols]
+
+                # Clean data
+                t_orders["item-price"] = pd.to_numeric(t_orders["item-price"].replace(r"^\s*$", pd.NA, regex=True), errors="coerce")
+                t_orders = t_orders.dropna(subset=["item-price"])
+                t_orders["quantity"] = pd.to_numeric(t_orders["quantity"], errors="coerce").fillna(0)
+
+                # ASIN to quantity map
+                t_asin_qty_map = t_orders.groupby("asin")["quantity"].sum().to_dict()
+
+                # Shipped orders
+                t_shipped = t_orders[t_orders['order-status'] == 'Shipped'].copy()
+                t_shipped = t_shipped.sort_values(by='purchase-date', ascending=False)
+
+                # State analysis
+                t_state_counts = t_shipped['ship-state'].value_counts().reset_index()
+                t_state_counts.columns = ['ship-state', 'count']
+                t_state_analysis = pd.concat([
+                    t_state_counts,
+                    pd.DataFrame({'ship-state': ['TOTAL'], 'count': [t_state_counts['count'].sum()]})
+                ], ignore_index=True)
+
+                # BAU Price
+                t_bau = t_bau_sheet.copy()
+                t_bau["order qty"] = t_bau["ASIN"].map(t_asin_qty_map).fillna(0)
+                t_bau["P/l"] = pd.to_numeric(t_bau["P/l"], errors="coerce").fillna(0)
+                t_bau["P/l on orders qty"] = t_bau["P/l"] * t_bau["order qty"]
+                t_total_pl = t_bau["P/l on orders qty"].sum()
+                t_bau_final = pd.concat([
+                    t_bau,
+                    pd.DataFrame([{col: "" for col in t_bau.columns} | {"ASIN": "TOTAL", "P/l on orders qty": t_total_pl}])
+                ], ignore_index=True)
+
+                # Freebie
+                t_freebie = t_freebie_sheet.copy()
+                t_freebie["order qty"] = t_freebie["Freebie ASIN"].map(t_asin_qty_map).fillna(0)
+                t_freebie["order qty"] = t_freebie["order qty"].where(~t_freebie.duplicated(subset="Freebie ASIN"), 0)
+                t_freebie["MRP.1"] = pd.to_numeric(t_freebie["MRP.1"], errors="coerce").fillna(0)
+                t_freebie["mrp on order qty"] = t_freebie["MRP.1"] * t_freebie["order qty"]
+                t_total_mrp = t_freebie["mrp on order qty"].sum()
+                t_freebie_final = pd.concat([
+                    t_freebie,
+                    pd.DataFrame([{col: "" for col in t_freebie.columns} | {"Freebie ASIN": "TOTAL", "mrp on order qty": t_total_mrp}])
+                ], ignore_index=True)
+
+                # Coupon
+                t_coupon = t_coupon_sheet.copy()
+                t_coupon["order qty"] = t_coupon["ASIN"].map(t_asin_qty_map).fillna(0)
+                t_coupon["Coupon Amt"] = pd.to_numeric(t_coupon["Coupon Amt"], errors="coerce").fillna(0)
+                t_coupon["coupon value on order qty"] = t_coupon["Coupon Amt"] * t_coupon["order qty"]
+                t_total_coupon = t_coupon["coupon value on order qty"].sum()
+                t_coupon_final = pd.concat([
+                    t_coupon,
+                    pd.DataFrame([{col: "" for col in t_coupon.columns} | {"ASIN": "TOTAL", "coupon value on order qty": t_total_coupon}])
+                ], ignore_index=True)
+
+            st.success(f"✅ Tramontina processed! Shipped: {len(t_shipped):,} | P/L: ₹{t_total_pl:,.2f} | Freebie MRP: ₹{t_total_mrp:,.2f} | Coupon: ₹{t_total_coupon:,.0f}")
+
+            # Metrics
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Total Orders", f"{len(t_orders):,}")
+            m2.metric("Shipped Orders", f"{len(t_shipped):,}")
+            m3.metric("States", f"{len(t_state_analysis)-1}")
+            m4.metric("Total P/L", f"₹{t_total_pl:,.2f}")
+            m5.metric("Coupon Value", f"₹{t_total_coupon:,.0f}")
+
+            # Sub-tabs
+            tr_tab1, tr_tab2, tr_tab3, tr_tab4, tr_tab5 = st.tabs(["💰 BAU Price", "🎁 Freebie", "🎫 Coupon", "📦 Shipped Orders", "📊 State Analysis"])
+
+            with tr_tab1:
+                st.subheader("BAU Price Analysis")
+                st.dataframe(t_bau_final, use_container_width=True, height=400)
+                st.info(f"**Total P/L: ₹{t_total_pl:,.2f}**")
+                st.download_button("📥 Download BAU Price", convert_to_excel(t_bau_final, 'BAU Price'), "tramontina_bau.xlsx")
+
+            with tr_tab2:
+                st.subheader("Freebie Analysis")
+                st.dataframe(t_freebie_final, use_container_width=True, height=400)
+                st.info(f"**Total MRP: ₹{t_total_mrp:,.2f}**")
+                st.download_button("📥 Download Freebie", convert_to_excel(t_freebie_final, 'Freebie'), "tramontina_freebie.xlsx")
+
+            with tr_tab3:
+                st.subheader("Coupon Analysis")
+                st.dataframe(t_coupon_final, use_container_width=True, height=400)
+                st.info(f"**Total Coupon: ₹{t_total_coupon:,.2f}**")
+                st.download_button("📥 Download Coupon", convert_to_excel(t_coupon_final, 'Coupon'), "tramontina_coupon.xlsx")
+
+            with tr_tab4:
+                st.subheader("Shipped Orders")
+                st.dataframe(t_shipped.head(100), use_container_width=True, height=400)
+                st.info(f"Showing first 100 of {len(t_shipped):,} shipped orders")
+                st.download_button("📥 Download Shipped Orders", convert_to_excel(t_shipped, 'Shipped Orders'), "tramontina_shipped.xlsx")
+
+            with tr_tab5:
+                st.subheader("State-wise Distribution")
+                st.dataframe(t_state_analysis, use_container_width=True)
+                st.download_button("📥 Download State Analysis", convert_to_excel(t_state_analysis, 'State Analysis'), "tramontina_state.xlsx")
+
+            # Combined download
+            st.markdown("---")
+            t_combined_buffer = io.BytesIO()
+            with pd.ExcelWriter(t_combined_buffer, engine='xlsxwriter') as writer:
+                t_shipped.to_excel(writer, index=False, sheet_name='Shipped Orders')
+                t_state_analysis.to_excel(writer, index=False, sheet_name='State Analysis')
+                t_bau_final.to_excel(writer, index=False, sheet_name='BAU Price')
+                t_freebie_final.to_excel(writer, index=False, sheet_name='Freebie')
+                t_coupon_final.to_excel(writer, index=False, sheet_name='Coupon')
+            st.download_button("📥 Download All Tramontina Reports", t_combined_buffer.getvalue(), "tramontina_all_reports.xlsx")
+
+            # For Combined Summary
+            t_total_support = t_total_pl + t_total_mrp + t_total_coupon
+            tramontina_combined = pd.DataFrame({"Brand": ["Tramontina"], "Tramontina Support": [t_total_support]})
+            combined_results.append(tramontina_combined)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Tramontina data: {str(e)}")
+    else:
+        st.warning("Please upload Tramontina Orders, PM file, and BAU Offer Excel.")
 
 # ==========================================
 # FINAL COMBINED REPORT POPULATION
