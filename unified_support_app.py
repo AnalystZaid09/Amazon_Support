@@ -236,142 +236,179 @@ def fill_sku_from_report(payment_order, report_df):
 # DYSON HELPERS
 # ==========================================
 
-def process_dyson_channel(zip_file, pm_file, dyson_promo_file):
-    """Process B2B or B2C Dyson data and calculate support"""
+def get_dyson_available_months(zip_files):
+    """Scan ZIP files and return unique months found in Invoice Date column"""
+    month_names = {
+        1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+        7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
+    }
+    found_months = set()
     try:
-        # Read report from ZIP
-        with zipfile.ZipFile(zip_file) as z:
-            csv_name = [name for name in z.namelist() if name.endswith('.csv')][0]
-            with z.open(csv_name) as f:
-                data = pd.read_csv(f)
+        for zip_file in zip_files:
+            with zipfile.ZipFile(zip_file) as z:
+                csv_files = [name for name in z.namelist() if name.endswith('.csv')]
+                for csv_name in csv_files:
+                    with z.open(csv_name) as f:
+                        temp_df = pd.read_csv(f, usecols=["Invoice Date"])
+                        dates = pd.to_datetime(temp_df["Invoice Date"], errors='coerce')
+                        for m in dates.dt.month.dropna().unique():
+                            found_months.add(month_names[int(m)])
+            zip_file.seek(0)  # Reset file pointer so it can be read again
+    except Exception:
+        pass
+    ordered = ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"]
+    return [m for m in ordered if m in found_months]
 
-        # Read PM file and Dyson Promo file
-        PM = pd.read_excel(pm_file)
-        Dyson_Promo = pd.read_excel(dyson_promo_file)
+
+def process_dyson_data(zip_files, pm_file, promo_file, past_months):
+    """Process B2B/B2C Dyson data and calculate support"""
+    try:
+        # ---------- READ FILES ----------
+        all_dfs = []
+        for zip_file in zip_files:
+            with zipfile.ZipFile(zip_file) as z:
+                csv_files = [name for name in z.namelist() if name.endswith('.csv')]
+                for csv_name in csv_files:
+                    with z.open(csv_name) as f:
+                        temp_df = pd.read_csv(f)
+                        all_dfs.append(temp_df)
+
+        df = pd.concat(all_dfs, ignore_index=True)
 
         # Clean and prepare data
-        data["Asin"] = data["Asin"].astype(str).str.strip()
+        df["Sku"] = df["Sku"].astype(str).str.strip()
+        df["Asin"] = df["Asin"].astype(str).str.strip()
+        PM = pd.read_excel(pm_file)
+        Promo = pd.read_excel(promo_file)
+        PM["Amazon Sku Name"] = PM["Amazon Sku Name"].astype(str).str.strip()
         PM["ASIN"] = PM["ASIN"].astype(str).str.strip()
-        Dyson_Promo["ASIN"] = Dyson_Promo["ASIN"].astype(str).str.strip()
+        Promo["ASIN"] = Promo["ASIN"].astype(str).str.strip()
 
-        # Map Brand from PM file
-        brand_map = PM.groupby("ASIN", as_index=True)["Brand"].first()
-        data["Brand"] = data["Asin"].map(brand_map)
+        # ---------- STEP 1: BRAND MAP via SKU ----------
+        brand_map_sku = PM.groupby("Amazon Sku Name", as_index=True)["Brand"].first()
+        df["Brand"] = df["Sku"].map(brand_map_sku)
 
-        # Move Brand column after Sku if Sku exists
-        cols = list(data.columns)
-        if "Sku" in cols:
+        # Move Brand column after Sku
+        cols = list(df.columns)
+        if "Sku" in cols and "Brand" in cols:
             sku_idx = cols.index("Sku")
             cols.remove("Brand")
             cols.insert(sku_idx + 1, "Brand")
-            data = data[cols]
+            df = df[cols]
 
-        # Filter Dyson brand - handle NaN values
-        dyson_data = data[data["Brand"].notna() & (data["Brand"].astype(str).str.strip().str.upper() == "DYSON")].copy()
+        # ---------- STEP 2: REMOVE SELECTED PAST-MONTH REFUNDS ----------
+        month_map = {
+            "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+            "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+        }
 
-        # Identify cancelled orders
-        cancel_data = dyson_data[
-            dyson_data["Transaction Type"].astype(str).str.strip().str.upper() == "CANCEL"
-        ]
-        cancel_order_set = set(cancel_data["Order Id"])
+        df["Invoice Date"] = pd.to_datetime(df["Invoice Date"], errors='coerce')
 
-        # Add Order Status
-        dyson_data["Order Status"] = dyson_data["Order Id"].apply(
-            lambda x: x if x in cancel_order_set else np.nan
+        if past_months:
+            selected_month_nums = [month_map[m] for m in past_months]
+            past_month_refund_mask = (
+                (df["Invoice Date"].dt.month.isin(selected_month_nums)) &
+                (df["Transaction Type"].astype(str).str.strip().str.upper() == "REFUND")
+            )
+            df = df[~past_month_refund_mask].copy()
+
+        # ---------- DYSON ONLY ----------
+        dyson_df = df[df["Brand"].notna() & (df["Brand"].astype(str).str.strip().str.upper() == "DYSON")].copy()
+
+        # ---------- ORDER STATUS ----------
+        cancel_orders = set(
+            dyson_df[dyson_df["Transaction Type"].astype(str).str.strip().str.upper() == "CANCEL"]["Order Id"]
+        )
+
+        dyson_df["Order Status"] = np.where(
+            dyson_df["Order Id"].isin(cancel_orders),
+            "Cancel",
+            dyson_df["Transaction Type"]
         )
 
         # Move Order Status after Order Id
-        cols = list(dyson_data.columns)
+        cols = list(dyson_df.columns)
         order_idx = cols.index("Order Id")
         cols.remove("Order Status")
         cols.insert(order_idx + 1, "Order Status")
-        dyson_data = dyson_data[cols]
+        dyson_df = dyson_df[cols]
 
-        # Replace NaN with Transaction Type
-        dyson_data["Order Status"] = np.where(
-            dyson_data["Order Status"].isna(),
-            dyson_data["Transaction Type"],
-            "Cancel"
-        )
+        # ---------- PROCESSED DATA (BEFORE PIVOT) ----------
+        processed_df = dyson_df.copy()
 
-        # Create pivot table
-        pivot_order_status = pd.pivot_table(
-            dyson_data,
+        # ---------- PIVOT ----------
+        pivot = pd.pivot_table(
+            dyson_df,
             index="Asin",
             columns="Order Status",
             values="Quantity",
             aggfunc="sum",
             fill_value=0,
-            margins=True,
-            margins_name="Grand Total"
+            margins=False
+        ).reset_index()
+
+        # ---------- NET SALE ----------
+        pivot["Net Sale / Actual Shipment"] = (
+            pivot.get("Shipment", 0) - pivot.get("Refund", 0)
         )
 
-        pivot_order_status_index = pivot_order_status.reset_index()
+        # ---------- PROMO MAP ----------
+        pivot["SKU CODE"] = pivot["Asin"].map(Promo.groupby("ASIN")["SKU Code"].first())
+        pivot["SSP"] = pivot["Asin"].map(Promo.groupby("ASIN")["SSP"].first())
+        pivot["Cons Promo"] = pivot["Asin"].map(Promo.groupby("ASIN")["Cons Promo"].first())
+        pivot["Margin %"] = pivot["Asin"].map(Promo.groupby("ASIN")["Margin"].first()) * 100
 
-        # Calculate Net Sale
-        pivot_order_status_index["Net Sale / Actual Shipment"] = (
-            pivot_order_status_index.get("Shipment", 0) -
-            pivot_order_status_index.get("Refund", 0)
+        # ---------- SUPPORT ----------
+        pivot["Support"] = (
+            (pivot["SSP"] - pivot["Cons Promo"])
+            * (1 - pivot["Margin %"] / 100)
         )
 
-        # Map SKU, SSP, Cons Promo, Margin from Dyson_Promo file
-        sku_map = Dyson_Promo.groupby("ASIN", as_index=True)["SKU Code"].first()
-        ssp_map = Dyson_Promo.groupby("ASIN", as_index=True)["SSP"].first()
-        cons_map = Dyson_Promo.groupby("ASIN", as_index=True)["Cons Promo"].first()
-        margin_map = Dyson_Promo.groupby("ASIN", as_index=True)["Margin"].first()
-
-        pivot_order_status_index["SKU CODE"] = pivot_order_status_index["Asin"].map(sku_map)
-        pivot_order_status_index["SSP"] = pivot_order_status_index["Asin"].map(ssp_map)
-        pivot_order_status_index["Cons Promo"] = pivot_order_status_index["Asin"].map(cons_map)
-        pivot_order_status_index["Margin %"] = (
-            pivot_order_status_index["Asin"].map(margin_map).mul(100)
+        pivot["SUPPORT AS PER NET SALE"] = (
+            pivot["Support"].fillna(0)
+            * pivot["Net Sale / Actual Shipment"].fillna(0)
         )
 
-        # Calculate Support
-        pivot_order_status_index["Support"] = (
-            (pivot_order_status_index["SSP"] - pivot_order_status_index["Cons Promo"])
-            * (1 - pivot_order_status_index["Margin %"] / 100)
-        )
+        # ---------- BASE AMOUNT (EXCLUDING 18% GST) ----------
+        pivot["Base Amount"] = (pivot["SUPPORT AS PER NET SALE"] / 1.18).round(2)
 
-        # Calculate Support as per Net Sale
-        pivot_order_status_index["SUPPORT AS PER NET SALE"] = (
-            pd.to_numeric(pivot_order_status_index["Support"], errors='coerce').fillna(0)
-            * pd.to_numeric(pivot_order_status_index["Net Sale / Actual Shipment"], errors='coerce').fillna(0)
-        )
-
-        # Fill NaN with 0 except for Grand Total row
-        mask = pivot_order_status_index["Asin"] != "Grand Total"
-        for col in pivot_order_status_index.columns:
-            if col not in ["Asin", "SKU CODE", "Order Status"]:
-                pivot_order_status_index.loc[mask, col] = pd.to_numeric(
-                    pivot_order_status_index.loc[mask, col], errors='coerce'
-                ).fillna(0)
-
-        # Recalculate Grand Total
-        df_no_gt = pivot_order_status_index[
-            pivot_order_status_index["Asin"] != "Grand Total"
-        ].copy()
+        # ---------- CLEAN NUMERIC ----------
+        pivot.replace("", np.nan, inplace=True)
 
         exclude_cols = ["Asin", "SKU CODE"]
-        cols_to_sum = [c for c in df_no_gt.columns if c not in exclude_cols]
+        numeric_cols = [col for col in pivot.columns if col not in exclude_cols]
 
-        df_no_gt[cols_to_sum] = df_no_gt[cols_to_sum].apply(pd.to_numeric, errors="coerce")
+        for col in numeric_cols:
+            pivot[col] = pd.to_numeric(pivot[col], errors="coerce").fillna(0)
 
-        grand_total = df_no_gt[cols_to_sum].sum().to_frame().T
-        grand_total["Asin"] = "Grand Total"
-        grand_total["SKU CODE"] = ""
-        grand_total = grand_total[pivot_order_status_index.columns]
+        # ---------- GRAND TOTAL ----------
+        grand_total = {}
+        for col in pivot.columns:
+            if col == "Asin":
+                grand_total[col] = "Grand Total"
+            elif col == "SKU CODE":
+                grand_total[col] = ""
+            elif col in numeric_cols:
+                grand_total[col] = pivot[col].sum()
+            else:
+                grand_total[col] = 0
 
-        pivot_order_status_index = pd.concat([df_no_gt, grand_total], ignore_index=True)
+        pivot = pd.concat([pivot, pd.DataFrame([grand_total])], ignore_index=True)
 
         # Convert SKU CODE to string to avoid Arrow serialization issues
-        pivot_order_status_index["SKU CODE"] = pivot_order_status_index["SKU CODE"].astype(str)
+        pivot["SKU CODE"] = pivot["SKU CODE"].astype(str)
 
-        return pivot_order_status_index
+        return pivot, processed_df
 
     except Exception as e:
         st.error(f"Error processing Dyson data: {str(e)}")
-        return None
+        return None, None
+
+
+def convert_dyson_df_to_csv(df):
+    """Convert dataframe to CSV for Dyson downloads"""
+    return df.to_csv(index=False).encode('utf-8')
 
 # ==========================================
 # SIDEBAR - GLOBAL UPLOADS
@@ -400,9 +437,11 @@ bergner_orders_file = st.sidebar.file_uploader("Bergner Orders (Excel)", type=["
 bergner_support_file = st.sidebar.file_uploader("Bergner Support File (Excel)", type=["xlsx", "xls"], key="bergner_sup_up")
 
 st.sidebar.subheader("🧮 Dyson Support")
-dyson_b2b_zip = st.sidebar.file_uploader("Dyson B2B Report (ZIP)", type=["zip"], key="dyson_b2b_up")
-dyson_b2c_zip = st.sidebar.file_uploader("Dyson B2C Report (ZIP)", type=["zip"], key="dyson_b2c_up")
+dyson_b2b_zips = st.sidebar.file_uploader("Dyson B2B Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2b_up")
+dyson_b2c_zips = st.sidebar.file_uploader("Dyson B2C Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2c_up")
 dyson_promo_file = st.sidebar.file_uploader("Dyson Promo (Excel)", type=["xlsx", "xls"], key="dyson_promo_up")
+dyson_invoice_file = st.sidebar.file_uploader("Dyson Invoice (Excel)", type=["xlsx", "xls"], key="dyson_invoice_up")
+dyson_invoice_promo_file = st.sidebar.file_uploader("Dyson Invoice Promo CN (Excel)", type=["xlsx", "xls"], key="dyson_inv_promo_up")
 
 st.sidebar.subheader("📦 Tramontina Support")
 tramontina_orders_file = st.sidebar.file_uploader("Tramontina Orders (Excel)", type=["xlsx", "xls"], key="tramo_orders_up")
@@ -432,7 +471,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zip or dyson_b2c_zip or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file):
+if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file):
     st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
     st.markdown("""
     ### 📂 Expected Files:
@@ -1072,59 +1111,224 @@ with tabs[7]:
 # ==========================================
 with tabs[8]:
     st.header("🧮 Dyson Support Analysis")
-    if dyson_promo_file and pm_file and (dyson_b2b_zip or dyson_b2c_zip):
-        dy_tab1, dy_tab2 = st.tabs(["📊 B2B Analysis", "📈 B2C Analysis"])
 
-        with dy_tab1:
-            st.subheader("B2B Support Calculation")
-            if dyson_b2b_zip:
-                with st.spinner("Processing B2B Dyson data..."):
-                    b2b_result = process_dyson_channel(dyson_b2b_zip, pm_file, dyson_promo_file)
+    dy_tab1, dy_tab2, dy_tab3, dy_tab4 = st.tabs([
+        "📊 B2B Analysis",
+        "📈 B2C Analysis",
+        "🔄 Combined Analysis",
+        "🧾 Invoice Qty"
+    ])
 
-                if b2b_result is not None:
-                    # Metrics
-                    gt_row = b2b_result[b2b_result['Asin'] == 'Grand Total'].iloc[0]
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Total Shipments", f"{int(gt_row.get('Shipment', 0)):,}")
-                    col2.metric("Net Sales", f"{int(gt_row.get('Net Sale / Actual Shipment', 0)):,}")
-                    col3.metric("Total Cancels", f"{int(gt_row.get('Cancel', 0)):,}")
-                    col4.metric("Total Support", format_currency(gt_row.get('SUPPORT AS PER NET SALE', 0)))
+    def render_dyson_tab(dy_tab, key):
+        """Render B2B, B2C or Combined sub-tab for Dyson"""
+        with dy_tab:
+            st.subheader(f"{key} Support Calculation")
 
-                    st.dataframe(b2b_result, use_container_width=True, height=400)
-                    st.download_button("📥 Download B2B Results", convert_to_excel(b2b_result, 'B2B Support'), "dyson_b2b_support.xlsx")
-
-                    # Add to combined
-                    b2b_support_total = gt_row.get('SUPPORT AS PER NET SALE', 0)
-                    dyson_b2b_combined = pd.DataFrame({"Brand": ["Dyson (B2B)"], "Dyson B2B Support": [b2b_support_total]})
-                    combined_results.append(dyson_b2b_combined)
+            if key == "Combined":
+                # Combined uses both B2B + B2C ZIPs from sidebar
+                all_zips_for_scan = (dyson_b2b_zips if dyson_b2b_zips else []) + (dyson_b2c_zips if dyson_b2c_zips else [])
+                available_months = get_dyson_available_months(all_zips_for_scan) if all_zips_for_scan else []
             else:
-                st.info("Upload Dyson B2B ZIP file to process B2B data.")
+                zip_files_for_tab = dyson_b2b_zips if key == "B2B" else dyson_b2c_zips
+                available_months = get_dyson_available_months(zip_files_for_tab) if zip_files_for_tab else []
 
-        with dy_tab2:
-            st.subheader("B2C Support Calculation")
-            if dyson_b2c_zip:
-                with st.spinner("Processing B2C Dyson data..."):
-                    b2c_result = process_dyson_channel(dyson_b2c_zip, pm_file, dyson_promo_file)
-
-                if b2c_result is not None:
-                    gt_row = b2c_result[b2c_result['Asin'] == 'Grand Total'].iloc[0]
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Total Shipments", f"{int(gt_row.get('Shipment', 0)):,}")
-                    col2.metric("Net Sales", f"{int(gt_row.get('Net Sale / Actual Shipment', 0)):,}")
-                    col3.metric("Total Refunds", f"{int(gt_row.get('Refund', 0)):,}")
-                    col4.metric("Total Support", format_currency(gt_row.get('SUPPORT AS PER NET SALE', 0)))
-
-                    st.dataframe(b2c_result, use_container_width=True, height=400)
-                    st.download_button("📥 Download B2C Results", convert_to_excel(b2c_result, 'B2C Support'), "dyson_b2c_support.xlsx")
-
-                    # Add to combined
-                    b2c_support_total = gt_row.get('SUPPORT AS PER NET SALE', 0)
-                    dyson_b2c_combined = pd.DataFrame({"Brand": ["Dyson (B2C)"], "Dyson B2C Support": [b2c_support_total]})
-                    combined_results.append(dyson_b2c_combined)
+            # Show past months multiselect only if ZIP files are uploaded
+            if available_months:
+                past_months = st.multiselect(
+                    f"Select past months to remove Refund data ({key})",
+                    options=available_months,
+                    default=[],
+                    key=f'dyson_past_months_{key}',
+                    help="These months were found in Invoice Date column. Select which ones to remove Refund data from."
+                )
             else:
-                st.info("Upload Dyson B2C ZIP file to process B2C data.")
-    else:
-        st.warning("Please upload Dyson Promo Excel, PM file, and at least one B2B/B2C ZIP file.")
+                past_months = []
+
+            # Calculate button
+            if key == "Combined":
+                if st.button(f"🔄 Calculate {key} Support", type="primary", use_container_width=True, key=f"dyson_calc_{key}"):
+                    all_zips = (dyson_b2b_zips if dyson_b2b_zips else []) + (dyson_b2c_zips if dyson_b2c_zips else [])
+                    if all_zips and pm_file and dyson_promo_file:
+                        with st.spinner("Processing combined Dyson data..."):
+                            pivot, processed = process_dyson_data(all_zips, pm_file, dyson_promo_file, past_months)
+                            if pivot is not None:
+                                st.session_state[f'dyson_{key}_pivot'] = pivot
+                                st.session_state[f'dyson_{key}_processed'] = processed
+                                st.success(f"✅ {key} data processed successfully!")
+                    else:
+                        st.warning("⚠️ Please upload at least one report ZIP and both PM/Promo files.")
+            else:
+                zip_files_for_tab = dyson_b2b_zips if key == "B2B" else dyson_b2c_zips
+                if st.button(f"🔄 Calculate {key} Support", type="primary", use_container_width=True, key=f"dyson_calc_{key}"):
+                    if zip_files_for_tab and pm_file and dyson_promo_file:
+                        with st.spinner(f"Processing {key} Dyson data..."):
+                            pivot, processed = process_dyson_data(zip_files_for_tab, pm_file, dyson_promo_file, past_months)
+                            if pivot is not None:
+                                st.session_state[f'dyson_{key}_pivot'] = pivot
+                                st.session_state[f'dyson_{key}_processed'] = processed
+                                st.success(f"✅ {key} data processed successfully!")
+                    else:
+                        st.warning("⚠️ Please upload ZIP file(s), PM file, and Dyson Promo file.")
+
+            # -------- PROCESSED DATA --------
+            if f'dyson_{key}_processed' in st.session_state:
+                st.markdown("---")
+                st.markdown("### 🧾 Processed Dyson Data (Before Pivot)")
+                st.dataframe(
+                    st.session_state[f'dyson_{key}_processed'],
+                    height=350,
+                    use_container_width=True
+                )
+                csv_proc = convert_dyson_df_to_csv(st.session_state[f'dyson_{key}_processed'])
+                st.download_button(
+                    label="📥 Download Processed Data (Before Pivot)",
+                    data=csv_proc,
+                    file_name=f"dyson_{key.lower()}_processed_before_pivot.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key=f"dyson_dl_proc_{key}"
+                )
+                st.markdown("---")
+
+            # -------- FINAL RESULT --------
+            if f'dyson_{key}_pivot' in st.session_state:
+                result = st.session_state[f'dyson_{key}_pivot']
+
+                # Key Metrics
+                grand_total_row = result[result['Asin'] == 'Grand Total'].iloc[0]
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Shipments", f"{int(grand_total_row.get('Shipment', 0)):,}")
+                with col2:
+                    st.metric("Net Sales", f"{int(grand_total_row.get('Net Sale / Actual Shipment', 0)):,}")
+                with col3:
+                    metric_label = "Total Cancels" if key == "B2B" else "Total Refunds"
+                    metric_value = grand_total_row.get('Cancel', 0) if key == "B2B" else grand_total_row.get('Refund', 0)
+                    st.metric(metric_label, f"{int(metric_value):,}")
+                with col4:
+                    support_total = grand_total_row.get('SUPPORT AS PER NET SALE', 0)
+                    st.metric("Total Support", format_currency(support_total))
+
+                st.markdown("---")
+
+                # Data table
+                st.markdown("### 📊 Final Support Calculation")
+
+                # Format numeric columns for display
+                display_df = result.copy()
+                numeric_cols_fmt = ['SSP', 'Cons Promo', 'Support', 'SUPPORT AS PER NET SALE', 'Base Amount']
+                for col in numeric_cols_fmt:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(lambda x: format_currency(x) if pd.notna(x) else '-')
+
+                # Highlight Grand Total row
+                def highlight_gt(row):
+                    if row['Asin'] == 'Grand Total':
+                        return ['background-color: #dbeafe; font-weight: bold'] * len(row)
+                    return [''] * len(row)
+
+                st.dataframe(
+                    display_df.style.apply(highlight_gt, axis=1),
+                    use_container_width=True,
+                    height=400
+                )
+
+                # Download button
+                csv_final = convert_dyson_df_to_csv(result)
+                st.download_button(
+                    label=f"📥 Download {key} Final Results as CSV",
+                    data=csv_final,
+                    file_name=f"dyson_{key.lower()}_final_support_analysis.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key=f"dyson_dl_final_{key}"
+                )
+
+                # Add to combined summary
+                dy_support_total = grand_total_row.get('SUPPORT AS PER NET SALE', 0)
+                dy_combined_df = pd.DataFrame({"Brand": [f"Dyson ({key})"], f"Dyson {key} Support": [dy_support_total]})
+                combined_results.append(dy_combined_df)
+
+    # Render B2B, B2C, Combined tabs
+    render_dyson_tab(dy_tab1, "B2B")
+    render_dyson_tab(dy_tab2, "B2C")
+    render_dyson_tab(dy_tab3, "Combined")
+
+    # ---------------- INVOICE QTY REPORT ----------------
+    with dy_tab4:
+        st.subheader("🧾 Invoice Qty Report")
+        st.info("Upload Invoice file and Promo CN file in the sidebar to generate report")
+
+        handling_rate = st.number_input(
+            "Enter Handling Charges (₹ per Qty)",
+            min_value=0.0,
+            value=270.0,
+            step=10.0,
+            key="dyson_handling_rate"
+        )
+
+        if st.button("🔄 Generate Invoice Qty Report", type="primary", use_container_width=True, key="dyson_invoice_calc"):
+            if dyson_invoice_file is not None and dyson_invoice_promo_file is not None:
+                try:
+                    df_invoice = pd.read_excel(dyson_invoice_file)
+                    df_invoice.columns = df_invoice.columns.str.strip()
+
+                    promo_df = pd.read_excel(dyson_invoice_promo_file)
+                    promo_df.columns = promo_df.columns.str.strip()
+
+                    # ---- STEP 1: BASIC PIVOT ----
+                    pivot_invoice = pd.pivot_table(
+                        df_invoice,
+                        index="Material_Cd",
+                        values=["Qty", "Total_Val"],
+                        aggfunc="sum",
+                        fill_value=0,
+                        margins=True,
+                        margins_name="Grand Total"
+                    ).reset_index()
+
+                    df_invoice = pivot_invoice.copy()
+
+                    # ---- CREATE CONSUMER PROMO (VLOOKUP Equivalent) ----
+                    lookup_column = promo_df.columns[3]   # Column D
+                    return_column = promo_df.columns[11]  # Column L (D to L = 9th column)
+                    promo_map = promo_df.set_index(lookup_column)[return_column]
+                    df_invoice["Consumer Promo"] = df_invoice["Material_Cd"].map(promo_map)
+
+                    # ---------- CALCULATIONS ----------
+                    df_invoice["Total Amount"] = df_invoice["Consumer Promo"].fillna(0) * df_invoice["Qty"]
+                    df_invoice["1% CN"] = df_invoice["Total Amount"] * 0.01
+                    df_invoice["Without GST (CN Base)"] = df_invoice["1% CN"] / 1.18
+                    df_invoice["Wt Handling"] = handling_rate * df_invoice["Qty"]
+                    df_invoice["Without GST per Handling"] = df_invoice["Wt Handling"] / 1.18
+                    df_invoice["Total"] = df_invoice["1% CN"] + df_invoice["Wt Handling"]
+                    df_invoice["Total Base"] = df_invoice["Total"] / 1.18
+
+                    desired_order = ["Material_Cd", "Qty", "Total_Val", "Consumer Promo", "Total Amount",
+                                     "1% CN", "Without GST (CN Base)", "Wt Handling",
+                                     "Without GST per Handling", "Total", "Total Base"]
+                    df_invoice = df_invoice[desired_order]
+
+                    st.success("✅ Invoice Qty Report Generated Successfully!")
+
+                    st.markdown("### 📊 Pivot Table")
+                    st.dataframe(df_invoice, use_container_width=True, height=400)
+
+                    csv_inv = convert_dyson_df_to_csv(df_invoice)
+                    st.download_button(
+                        label="📥 Download Invoice Qty Report",
+                        data=csv_inv,
+                        file_name="dyson_invoice_qty_report.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="dyson_dl_invoice"
+                    )
+
+                except Exception as e:
+                    st.error(f"Error processing Invoice Qty: {str(e)}")
+            else:
+                st.warning("⚠️ Please upload both Invoice file and Promo CN file in the sidebar.")
 
 # ==========================================
 # TAB 10: TRAMONTINA
