@@ -87,7 +87,7 @@ def format_currency(val):
 
 @st.cache_data
 def load_pm_cached(pm_bytes):
-    """Load and cache Product Master — called once, reused by all tabs"""
+    """Load and cache Purchase Master — called once, reused by all tabs"""
     df = pd.read_excel(io.BytesIO(pm_bytes))
     df["ASIN"] = df["ASIN"].astype(str)
     brand_map = df.drop_duplicates("ASIN").set_index("ASIN")["Brand"].to_dict()
@@ -425,7 +425,7 @@ st.sidebar.title("📤 Upload Center")
 
 with st.sidebar.expander("💎 Master Data (Shared)", expanded=True):
     st.caption("Used by most tools — upload these first")
-    pm_file = st.file_uploader("Product Master (PM)", type=["xlsx", "xls"], key="pm_global",
+    pm_file = st.file_uploader("Purchase Master (PM)", type=["xlsx", "xls"], key="pm_global",
                                help="Excel with ASIN, Brand, Amazon Sku Name columns")
     portfolio_file = st.file_uploader("Portfolio Report (Ads)", type=["xlsx", "xls"], key="portfolio_global",
                                       help="Excel mapping campaigns/portfolios → brands")
@@ -502,6 +502,13 @@ with st.sidebar.expander("📦 Tramontina Secondary"):
     tramontina_sec_file = st.file_uploader("Support File (Excel)", type=["xlsx", "xls"], key="tramo_sec_up",
                                            help="Excel: ASIN, P/l")
 
+with st.sidebar.expander("🍳 Wonderchef Secondary"):
+    st.caption("GIF Support Excel + Orders TXT • Requires PM")
+    wonderchef_support_file = st.file_uploader("GIF Support (Excel)", type=["xlsx", "xls"], key="wcf_sup_up",
+                                               help="Excel (header row 2): Amazon ASIN, L/P, Event price, Sold Units")
+    wonderchef_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="wcf_orders_up",
+                                              help="Tab-separated: asin, quantity, item-price")
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -517,7 +524,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file)
 
 if not any_files:
     st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
@@ -547,7 +554,7 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary"])
 
 combined_results = []
 
@@ -1537,6 +1544,16 @@ with tabs[9]:
 # ==========================================
 with tabs[10]:
     st.header("🏭 Bergner Secondary Support")
+
+    with st.expander("👁️ Preview Sample: Bergner Support Sheet (Snaphire Support Month of Dec-25 Rec From Brand.xlsx)", expanded=False):
+        _bs_sample = pd.DataFrame([
+            {"SKU": "BG-6331", "ASIN": "B00E5D9F7W", "Series": "Argent", "Product Name": "BERGNER -Argent Triply Kadhai with lid, 20 cm, 1.5 Liters", "MRP": 3295.0, "NLC W/O Tax": 1728.59, "Support Approved": "", "NLC With Tax": "", "SP": 2469, "GST": 2351.43, "Commission charged": 0.085, "Referal Fee": 209.87, "Fixed closing Fee": 51, "Pick pack": 13, "Monthly Storage": 12.52, "Weight Handling": 108.0, "Total FBA Fee": 394.39, "Receivable": 1957.04, "Return fee": 22.56, "SH Opex": 98.76, "After opex receivable": 1835.72, "P/L": 107.13, "Percent": 0.0434},
+            {"SKU": "BG-6332", "ASIN": "B00E5D9HAM", "Series": "Argent", "Product Name": "Bergner Argent Triply Kadhai with Lid, 24 cm, 2.5 Liters", "MRP": 3845.0, "NLC W/O Tax": 2408.62, "Support Approved": "", "NLC With Tax": "", "SP": 2839, "GST": 2703.81, "Commission charged": 0.085, "Referal Fee": 241.32, "Fixed closing Fee": 51, "Pick pack": 13, "Monthly Storage": 19.44, "Weight Handling": 136.0, "Total FBA Fee": 460.76, "Receivable": 2243.05, "Return fee": 24.8, "SH Opex": 113.56, "After opex receivable": 2104.69, "P/L": -303.92, "Percent": -0.1071},
+            {"SKU": "BG-6333", "ASIN": "B00E5D9JFK", "Series": "Argent", "Product Name": "Bergner Argent Triply Kadhai with Lid, 28 cm, 3.9 Liters", "MRP": 4575.0, "NLC W/O Tax": 2872.03, "Support Approved": "", "NLC With Tax": "", "SP": 3369, "GST": 3208.57, "Commission charged": 0.085, "Referal Fee": 286.37, "Fixed closing Fee": 51, "Pick pack": 13, "Monthly Storage": 26.02, "Weight Handling": 164.0, "Total FBA Fee": 540.39, "Receivable": 2668.19, "Return fee": 27.04, "SH Opex": 134.76, "After opex receivable": 2506.39, "P/L": -365.64, "Percent": -0.1085},
+        ])
+        st.caption(f"📄 3 sample rows × {len(_bs_sample.columns)} columns — read-only preview of expected Bergner Support format")
+        st.dataframe(_bs_sample, use_container_width=True, height=200)
+
     if bergner_sec_orders_file and pm_file and bergner_sec_file:
         try:
             with st.spinner("Processing Bergner Secondary data..."):
@@ -1625,6 +1642,16 @@ with tabs[10]:
 # ==========================================
 with tabs[11]:
     st.header("📦 Tramontina Secondary Support")
+
+    with st.expander("👁️ Preview Sample: Tramontina Support Sheet (Tramontina Additional Support Rec From Brand.xlsx)", expanded=False):
+        _ts_sample = pd.DataFrame([
+            {"SKU": 98051038, "Series": "Fusao+", "Range": "Casserole", "Category": "Cookware", "Product": "Tramontina Fusao Healthy Triply Ceramic 20cm/3.1L Casserole EX+", "MRP": 5615, "NLC W/O Tax": 3526.22, "Tax": 0.05, "NLC With Tax": 3702.53, "Margin": 0.372, "ASIN": "B0DS5DNVC4", "Discount": 0.15, "Event Mop": 4499, "Bau Commission": 0.125, "Event Commission": 0.07, "Referral Fee": 314.93, "Fixed closing": 51, "Pick & Pack": 0, "Monthly Storage": 23.2, "Weight Handling": 148.0, "Return Ratio": 61.8, "Total FBA Fee": 598.93, "Opex": 179.96, "Receivable": 3720.11, "P/l": 17.58, "%": 0.0039, "Bau mop": 4779},
+            {"SKU": 98051039, "Series": "Fusao+", "Range": "Casserole", "Category": "Cookware", "Product": "Tramontina Fusao Healthy Triply Ceramic 24cm/4.8L Casserole EX+", "MRP": 6555, "NLC W/O Tax": 4116.54, "Tax": 0.05, "NLC With Tax": 4322.37, "Margin": 0.372, "ASIN": "B0DS5M383J", "Discount": 0.15, "Event Mop": 5239, "Bau Commission": 0.125, "Event Commission": 0.07, "Referral Fee": 366.73, "Fixed closing": 51, "Pick & Pack": 0, "Monthly Storage": 28.13, "Weight Handling": 181.0, "Return Ratio": 68.4, "Total FBA Fee": 695.26, "Opex": 209.56, "Receivable": 4334.18, "P/l": 11.81, "%": 0.0023, "Bau mop": 5579},
+            {"SKU": 98051040, "Series": "Fusao+", "Range": "Casserole", "Category": "Cookware", "Product": "Tramontina Fusao Healthy Triply Ceramic 30cm/6.2L Casserole EX+", "MRP": 7495, "NLC W/O Tax": 4706.86, "Tax": 0.05, "NLC With Tax": 4942.20, "Margin": 0.372, "ASIN": "B0DS5K4JBH", "Discount": 0.15, "Event Mop": 5999, "Bau Commission": 0.125, "Event Commission": 0.07, "Referral Fee": 419.93, "Fixed closing": 51, "Pick & Pack": 0, "Monthly Storage": 28.5, "Weight Handling": 181.0, "Return Ratio": 68.4, "Total FBA Fee": 748.83, "Opex": 239.96, "Receivable": 5010.21, "P/l": 68.01, "%": 0.0113, "Bau mop": 6379},
+        ])
+        st.caption(f"📄 3 sample rows × {len(_ts_sample.columns)} columns — read-only preview of expected Tramontina Support format")
+        st.dataframe(_ts_sample, use_container_width=True, height=200)
+
     if tramontina_sec_orders_file and pm_file and tramontina_sec_file:
         try:
             with st.spinner("Processing Tramontina Secondary data..."):
@@ -1707,6 +1734,134 @@ with tabs[11]:
             st.error(f"❌ Error processing Tramontina Secondary: {str(e)}")
     else:
         st.warning("Please upload Tramontina Sec Orders TXT, PM file, and Tramontina Sec Support Excel.")
+
+# ==========================================
+# TAB 13: WONDERCHEF SECONDARY
+# ==========================================
+with tabs[12]:
+    st.header("🍳 Wonderchef Secondary Support")
+
+    with st.expander("👁️ Preview Sample: GIF Support Sheet (WCF GIF Support - Sep Wave-1.xlsx)", expanded=False):
+        _wcf_sample = pd.DataFrame([
+            {"Amazon ASIN": "B0BT9DYKHN", "Sold Units": "", "SKU Code": 63153844, "Desc": "SKT PLUS PROFESSIONAL", "Corrected NLC": 3082.0, "Event price": 4499, "Current Commission": 0.045, "Amazon Referral Fee": 202.455, "Monthly Storage Fee": 35.07, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 227.5, "Return Fee": 44.99, "GST": 103.5927, "Total FBA Fee +GST": 679.1077, "DB Margin": 224.95, "Payout": 3594.9423, "L/P": 512.9423, "Percent": 0.114, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B098P7STVY", "Sold Units": "", "SKU Code": 63153748, "Desc": "Wonderchef Nutri Blend Bolt FP 600W Black", "Corrected NLC": 3041.22, "Event price": 4299, "Current Commission": 0.045, "Amazon Referral Fee": 193.455, "Monthly Storage Fee": 28.94, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 188.0, "Return Fee": 42.99, "GST": 93.3993, "Total FBA Fee +GST": 612.2843, "DB Margin": 214.95, "Payout": 3471.7657, "L/P": 430.5457, "Percent": 0.1002, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B01HXWI2P2", "Sold Units": "", "SKU Code": 63151935, "Desc": "Smoky Grill Electric Barbeque", "Corrected NLC": 2983.0, "Event price": 4499, "Current Commission": 0.125, "Amazon Referral Fee": 562.375, "Monthly Storage Fee": 60.43, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 256.04, "Return Fee": 44.99, "GST": 178.0803, "Total FBA Fee +GST": 1167.4153, "DB Margin": 224.95, "Payout": 3106.6347, "L/P": 123.6347, "Percent": 0.0275, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B0CX1Q3923", "Sold Units": "", "SKU Code": 63154885, "Desc": "Wonderchef Neo Soup Maker 1.6 L Red", "Corrected NLC": 5069.22, "Event price": 6299, "Current Commission": 0.045, "Amazon Referral Fee": 283.455, "Monthly Storage Fee": 31.05, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 222.5, "Return Fee": 62.99, "GST": 119.7891, "Total FBA Fee +GST": 785.2841, "DB Margin": 314.95, "Payout": 5198.7659, "L/P": 129.5459, "Percent": 0.0206, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B0CPJJ1LT5", "Sold Units": "", "SKU Code": 63154849, "Desc": "Wonderchef Regenta Fully Automatic Coffee Machine", "Corrected NLC": 46278.0, "Event price": 56999, "Current Commission": 0.08, "Amazon Referral Fee": 4559.92, "Monthly Storage Fee": 123.98, "Fixed Closing Fee": 51, "Pick & Pack Fee": 27.5, "Weight Handling Fee": 371.0, "Return Fee": 569.99, "GST": 1026.6102, "Total FBA Fee +GST": 6730.0002, "DB Margin": 2849.95, "Payout": 47419.0498, "L/P": 1141.0498, "Percent": 0.02, "Support": 0, "Plan Sales Value": 0},
+        ])
+        st.caption(f"📄 5 sample rows × {len(_wcf_sample.columns)} columns — read-only preview of expected GIF Support format")
+        st.dataframe(_wcf_sample, use_container_width=True, height=250)
+
+    if wonderchef_support_file and wonderchef_orders_file and pm_file:
+        try:
+            with st.spinner("Processing Wonderchef Secondary data..."):
+                # Load GIF Support sheet (header at row 2)
+                wcf_support = pd.read_excel(wonderchef_support_file, header=1)
+
+                # Load orders (tab-separated TXT)
+                wcf_orders = pd.read_csv(wonderchef_orders_file, sep="\t", low_memory=False, dtype=str)
+                wcf_pm = pm_df.copy()
+
+                # Clean ASINs
+                wcf_orders['asin'] = wcf_orders['asin'].astype(str).str.strip()
+                wcf_pm['ASIN'] = wcf_pm['ASIN'].astype(str).str.strip()
+
+                # Merge Brand from PM
+                wcf_orders = wcf_orders.merge(wcf_pm[['ASIN', 'Brand']], left_on='asin', right_on='ASIN', how='left')
+                wcf_orders.drop(columns=['ASIN'], inplace=True, errors='ignore')
+
+                # Convert numeric cols
+                wcf_orders['item-price'] = pd.to_numeric(wcf_orders['item-price'], errors='coerce')
+                wcf_orders = wcf_orders[wcf_orders['item-price'].notna()]
+                wcf_orders['quantity'] = pd.to_numeric(wcf_orders['quantity'], errors='coerce').fillna(0)
+
+                # Filter Wonderchef brand
+                wcf_brand_orders = wcf_orders[wcf_orders['Brand'] == 'Wonderchef'].copy()
+
+                # Pivot: sold units per ASIN
+                wcf_pivot = (
+                    pd.pivot_table(wcf_brand_orders, index='asin', values='quantity', aggfunc='sum')
+                    .sort_values(by='quantity', ascending=False)
+                    .reset_index()
+                )
+                wcf_pivot.columns = ['Amazon ASIN', 'Sold Units']
+
+                # Map sold units into support sheet
+                wcf_support['Amazon ASIN'] = wcf_support['Amazon ASIN'].astype(str).str.strip()
+                wcf_pivot['Amazon ASIN'] = wcf_pivot['Amazon ASIN'].astype(str).str.strip()
+                asin_to_units = dict(zip(wcf_pivot['Amazon ASIN'], wcf_pivot['Sold Units']))
+                wcf_support['Sold Units'] = wcf_support['Amazon ASIN'].map(asin_to_units).fillna(0)
+
+                # Compute Support and Plan Sales Value
+                wcf_support['L/P'] = pd.to_numeric(wcf_support['L/P'], errors='coerce').fillna(0)
+                wcf_support['Sold Units'] = pd.to_numeric(wcf_support['Sold Units'], errors='coerce').fillna(0)
+                wcf_support['Support'] = wcf_support['L/P'] * wcf_support['Sold Units']
+                wcf_support['Plan Sales Value'] = wcf_support['Sold Units'] * pd.to_numeric(wcf_support['Event price'], errors='coerce').fillna(0)
+
+                # Grand Total row
+                wcf_total_support = wcf_support['Support'].sum()
+                wcf_total_psv = wcf_support['Plan Sales Value'].sum()
+                wcf_total_units = wcf_support['Sold Units'].sum()
+                wcf_support_pct = (wcf_total_support / wcf_total_psv * 100) if wcf_total_psv != 0 else 0
+
+                total_row = {col: '' for col in wcf_support.columns}
+                total_row['Amazon ASIN'] = 'Grand Total'
+                total_row['Sold Units'] = wcf_total_units
+                total_row['Support'] = wcf_total_support
+                total_row['Plan Sales Value'] = wcf_total_psv
+                wcf_support = pd.concat([wcf_support, pd.DataFrame([total_row])], ignore_index=True)
+
+                pct_row = {col: '' for col in wcf_support.columns}
+                pct_row['Amazon ASIN'] = 'Support %'
+                pct_row['Support'] = wcf_support_pct
+                wcf_support = pd.concat([wcf_support, pd.DataFrame([pct_row])], ignore_index=True)
+
+            st.success(f"✅ Wonderchef Secondary processed! Total Support: ₹{wcf_total_support:,.2f} | Support %: {wcf_support_pct:.2f}%")
+
+            # KPI Cards
+            data_rows_wcf = wcf_support[~wcf_support['Amazon ASIN'].isin(['Grand Total', 'Support %'])]
+            profitable = int((pd.to_numeric(data_rows_wcf['L/P'], errors='coerce') > 0).sum())
+            loss_making = int((pd.to_numeric(data_rows_wcf['L/P'], errors='coerce') < 0).sum())
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Total SKUs", len(data_rows_wcf))
+            k2.metric("Profitable", profitable)
+            k3.metric("Loss-Making", loss_making)
+            k4.metric("Total Support", f"₹{wcf_total_support:,.0f}")
+            k5.metric("Support %", f"{wcf_support_pct:.2f}%")
+
+            # Sub-tabs
+            wcf_tab1, wcf_tab2, wcf_tab3 = st.tabs(["📋 Final Support Table", "📦 Units Sold Pivot", "🔍 Wonderchef Orders"])
+
+            with wcf_tab1:
+                st.subheader("Wonderchef Support Sheet (Final)")
+                show_cols = [c for c in ['Amazon ASIN', 'SKU Code', 'Desc', 'Sold Units', 'Corrected NLC',
+                             'Event price', 'Current Commission', 'Total FBA Fee +GST', 'DB Margin',
+                             'Payout', 'L/P', 'Percent', 'Support', 'Plan Sales Value'] if c in wcf_support.columns]
+                st.dataframe(wcf_support[show_cols], use_container_width=True, height=500)
+                st.download_button("📥 Download Support Table", convert_to_excel(wcf_support[show_cols], 'WCF Support'), "wonderchef_support.xlsx")
+
+            with wcf_tab2:
+                st.subheader("Units Sold per ASIN")
+                st.dataframe(wcf_pivot, use_container_width=True, height=400)
+                st.download_button("📥 Download Units Pivot", convert_to_excel(wcf_pivot, 'Units Pivot'), "wonderchef_pivot.xlsx")
+
+            with wcf_tab3:
+                st.subheader("Amazon Orders — Wonderchef Brand")
+                st.caption(f"{len(wcf_brand_orders):,} rows")
+                st.dataframe(wcf_brand_orders.head(500), use_container_width=True, height=400)
+                if len(wcf_brand_orders) > 500:
+                    st.info(f"Showing first 500 of {len(wcf_brand_orders):,} rows")
+                st.download_button("📥 Download Orders", convert_to_excel(wcf_brand_orders, 'WCF Orders'), "wonderchef_orders.xlsx")
+
+            # Combined Summary
+            wcf_combined_df = pd.DataFrame({"Brand": ["Wonderchef (Secondary)"], "Wonderchef Sec Support": [wcf_total_support]})
+            combined_results.append(wcf_combined_df)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Wonderchef Secondary: {str(e)}")
+    else:
+        st.warning("Please upload Wonderchef GIF Support Excel, Orders TXT, and PM file.")
 
 # ==========================================
 # FINAL COMBINED REPORT POPULATION
