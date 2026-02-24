@@ -85,6 +85,14 @@ def format_currency(val):
     if pd.isna(val): return "₹ 0.00"
     return f"₹ {val:,.2f}"
 
+@st.cache_data
+def load_pm_cached(pm_bytes):
+    """Load and cache Product Master — called once, reused by all tabs"""
+    df = pd.read_excel(io.BytesIO(pm_bytes))
+    df["ASIN"] = df["ASIN"].astype(str)
+    brand_map = df.drop_duplicates("ASIN").set_index("ASIN")["Brand"].to_dict()
+    return df, brand_map
+
 # ==========================================
 # ADVERTISEMENT EXTRACTION LOGIC
 # ==========================================
@@ -261,7 +269,7 @@ def get_dyson_available_months(zip_files):
     return [m for m in ordered if m in found_months]
 
 
-def process_dyson_data(zip_files, pm_file, promo_file, past_months):
+def process_dyson_data(zip_files, pm_df_input, promo_file, past_months):
     """Process B2B/B2C Dyson data and calculate support"""
     try:
         # ---------- READ FILES ----------
@@ -279,7 +287,7 @@ def process_dyson_data(zip_files, pm_file, promo_file, past_months):
         # Clean and prepare data
         df["Sku"] = df["Sku"].astype(str).str.strip()
         df["Asin"] = df["Asin"].astype(str).str.strip()
-        PM = pd.read_excel(pm_file)
+        PM = pm_df_input.copy()
         Promo = pd.read_excel(promo_file)
         PM["Amazon Sku Name"] = PM["Amazon Sku Name"].astype(str).str.strip()
         PM["ASIN"] = PM["ASIN"].astype(str).str.strip()
@@ -411,304 +419,132 @@ def convert_dyson_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ==========================================
-# SIDEBAR - GLOBAL UPLOADS
+# SIDEBAR - GROUPED FILE UPLOADS
 # ==========================================
-st.sidebar.title("📤 Data Upload Center")
+st.sidebar.title("📤 Upload Center")
 
-st.sidebar.subheader("💎 Essential Master Data")
-pm_file = st.sidebar.file_uploader("Purchase Master (PM)", type=["xlsx", "xls"], key="pm_global")
-portfolio_file = st.sidebar.file_uploader("Portfolio Report (Ads Mapping)", type=["xlsx", "xls"], key="portfolio_global")
+with st.sidebar.expander("💎 Master Data (Shared)", expanded=True):
+    st.caption("Used by most tools — upload these first")
+    pm_file = st.file_uploader("Product Master (PM)", type=["xlsx", "xls"], key="pm_global",
+                               help="Excel with ASIN, Brand, Amazon Sku Name columns")
+    portfolio_file = st.file_uploader("Portfolio Report (Ads)", type=["xlsx", "xls"], key="portfolio_global",
+                                      help="Excel mapping campaigns/portfolios → brands")
 
-st.sidebar.markdown("---")
+with st.sidebar.expander("🏷️ Coupon"):
+    st.caption("Tab-separated TXT order report • Requires PM")
+    coupon_file = st.file_uploader("Coupon Orders (TXT)", type=["txt"], key="coupon_up",
+                                   help="Columns: asin, product-name, item-status, promotion-ids, item-promotion-discount")
 
-st.sidebar.subheader("📊 Support Report Files")
-coupon_file = st.sidebar.file_uploader("Coupon Orders (TXT)", type=["txt"], key="coupon_up")
-exchange_file = st.sidebar.file_uploader("Exchange Data (Excel)", type=["xlsx", "xls"], key="exchange_up")
-freebies_file = st.sidebar.file_uploader("Freebies Orders (TXT)", type=["txt"], key="freebies_up")
-ncemi_payment_file = st.sidebar.file_uploader("NCEMI Payment (CSV)", type=["csv"], key="ncemi_pay_up")
-ncemi_support_files = st.sidebar.file_uploader("NCEMI B2B/B2C Files", type=["csv", "zip"], accept_multiple_files=True, key="ncemi_sup_up")
-adv_files = st.sidebar.file_uploader("Advertisement Invoices (PDF)", type=["pdf"], accept_multiple_files=True, key="adv_up")
-rev_log_file = st.sidebar.file_uploader("Replacement Logistic (CSV)", type=["csv"], key="rev_log_up")
+with st.sidebar.expander("🔄 Exchange"):
+    st.caption("Excel with brand & seller funding columns")
+    exchange_file = st.file_uploader("Exchange Data (Excel)", type=["xlsx", "xls"], key="exchange_up",
+                                     help="Columns: brand, order_day, seller funding, liquidator funding")
 
-st.sidebar.markdown("---")
+with st.sidebar.expander("🎁 Freebies"):
+    st.caption("Tab-separated TXT order report • Requires PM")
+    freebies_file = st.file_uploader("Freebies Orders (TXT)", type=["txt"], key="freebies_up",
+                                     help="Columns: asin, product-name, item-status, promotion-ids (BOGO)")
 
-st.sidebar.subheader("🏭 Bergner Support")
-bergner_orders_file = st.sidebar.file_uploader("Bergner Orders (Excel)", type=["xlsx", "xls"], key="bergner_orders_up")
-bergner_support_file = st.sidebar.file_uploader("Bergner Support File (Excel)", type=["xlsx", "xls"], key="bergner_sup_up")
+with st.sidebar.expander("💳 NCEMI"):
+    st.caption("Payment CSV (header at row 12) • Requires PM")
+    ncemi_payment_file = st.file_uploader("Payment CSV", type=["csv"], key="ncemi_pay_up",
+                                          help="Columns: type, Sku, product sales, total")
+    ncemi_support_files = st.file_uploader("B2B/B2C Files", type=["csv", "zip"], accept_multiple_files=True, key="ncemi_sup_up",
+                                           help="CSV or ZIP with CSV for SKU mapping")
 
-st.sidebar.subheader("🧮 Dyson Support")
-dyson_b2b_zips = st.sidebar.file_uploader("Dyson B2B Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2b_up")
-dyson_b2c_zips = st.sidebar.file_uploader("Dyson B2C Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2c_up")
-dyson_promo_file = st.sidebar.file_uploader("Dyson Promo (Excel)", type=["xlsx", "xls"], key="dyson_promo_up")
-dyson_invoice_file = st.sidebar.file_uploader("Dyson Invoice (Excel)", type=["xlsx", "xls"], key="dyson_invoice_up")
-dyson_invoice_promo_file = st.sidebar.file_uploader("Dyson Invoice Promo CN (Excel)", type=["xlsx", "xls"], key="dyson_inv_promo_up")
+with st.sidebar.expander("📢 Advertisement"):
+    st.caption("PDF invoices from Amazon Ads")
+    adv_files = st.file_uploader("Invoice PDFs", type=["pdf"], accept_multiple_files=True, key="adv_up",
+                                  help="Data extracted automatically from PDF invoices")
 
-st.sidebar.subheader("📦 Tramontina Support")
-tramontina_orders_file = st.sidebar.file_uploader("Tramontina Orders (Excel)", type=["xlsx", "xls"], key="tramo_orders_up")
-tramontina_bau_file = st.sidebar.file_uploader("Tramontina BAU Offer (Excel)", type=["xlsx", "xls"], key="tramo_bau_up")
+with st.sidebar.expander("🔄 Replacement Logistic"):
+    st.caption("Unified Transaction CSV (header at row 13) • Requires PM")
+    rev_log_file = st.file_uploader("Transaction CSV", type=["csv"], key="rev_log_up",
+                                    help="Columns: type, Sku, product sales, quantity, total")
 
-st.sidebar.markdown("---")
+with st.sidebar.expander("🏭 Bergner"):
+    st.caption("Orders Excel/TXT + Support Excel • Requires PM")
+    bergner_orders_file = st.file_uploader("Bergner Orders (Excel/TXT)", type=["xlsx", "xls", "txt"], key="bergner_orders_up",
+                                           help="Excel or tab-separated TXT with: asin, product-name, item-status, item-price, quantity")
+    bergner_support_file = st.file_uploader("Support File (Excel)", type=["xlsx", "xls"], key="bergner_sup_up",
+                                            help="Columns: ASIN, P/L, Support Approved")
 
-st.sidebar.subheader("🏭 Bergner Secondary")
-bergner_sec_orders_file = st.sidebar.file_uploader("Bergner Sec Orders (TXT)", type=["txt", "tsv", "csv"], key="bergner_sec_orders_up")
-bergner_sec_file = st.sidebar.file_uploader("Bergner Sec Support File (Excel)", type=["xlsx", "xls"], key="bergner_sec_up")
+with st.sidebar.expander("🧮 Dyson"):
+    st.caption("B2B/B2C ZIPs + Promo/Invoice Excels • Requires PM")
+    dyson_b2b_zips = st.file_uploader("B2B Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2b_up",
+                                      help="ZIP with CSV: Sku, Asin, Quantity, Transaction Type, Order Id, Invoice Date")
+    dyson_b2c_zips = st.file_uploader("B2C Report (ZIP)", type=["zip"], accept_multiple_files=True, key="dyson_b2c_up")
+    dyson_promo_file = st.file_uploader("Promo (Excel)", type=["xlsx", "xls"], key="dyson_promo_up",
+                                        help="Columns: ASIN, SKU Code, SSP, Cons Promo, Margin")
+    dyson_invoice_file = st.file_uploader("Invoice (Excel)", type=["xlsx", "xls"], key="dyson_invoice_up",
+                                          help="Columns: Material_Cd, Qty, Total_Val")
+    dyson_invoice_promo_file = st.file_uploader("Invoice Promo CN (Excel)", type=["xlsx", "xls"], key="dyson_inv_promo_up",
+                                                help="Col D = lookup key, Col L = Consumer Promo value")
 
-st.sidebar.subheader("📦 Tramontina Secondary")
-tramontina_sec_orders_file = st.sidebar.file_uploader("Tramontina Sec Orders (TXT)", type=["txt", "tsv", "csv"], key="tramo_sec_orders_up")
-tramontina_sec_file = st.sidebar.file_uploader("Tramontina Sec Support File (Excel)", type=["xlsx", "xls"], key="tramo_sec_up")
+with st.sidebar.expander("📦 Tramontina"):
+    st.caption("Orders Excel/TXT + BAU Offer (3 sheets) • Requires PM")
+    tramontina_orders_file = st.file_uploader("Orders (Excel/TXT)", type=["xlsx", "xls", "txt"], key="tramo_orders_up",
+                                              help="Excel or tab-separated TXT with: asin, product-name, item-status, item-price, quantity")
+    tramontina_bau_file = st.file_uploader("BAU Offer (Excel)", type=["xlsx", "xls"], key="tramo_bau_up",
+                                           help="3 sheets: Amazon BAU Price, Freebie, Coupon — each with ASIN, P/L")
+
+with st.sidebar.expander("🏭 Bergner Secondary"):
+    st.caption("Orders TXT + Support Excel • Requires PM")
+    bergner_sec_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="bergner_sec_orders_up",
+                                               help="Tab-separated: asin, quantity, item-status")
+    bergner_sec_file = st.file_uploader("Support File (Excel)", type=["xlsx", "xls"], key="bergner_sec_up",
+                                        help="Excel (header row 3): ASIN, P/L")
+
+with st.sidebar.expander("📦 Tramontina Secondary"):
+    st.caption("Orders TXT + Support Excel • Requires PM")
+    tramontina_sec_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="tramo_sec_orders_up",
+                                                  help="Tab-separated: asin, quantity, item-status")
+    tramontina_sec_file = st.file_uploader("Support File (Excel)", type=["xlsx", "xls"], key="tramo_sec_up",
+                                           help="Excel: ASIN, P/l")
 
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
 brand_mapping = {}
+pm_df = None
 if pm_file:
-    pm_df = pd.read_excel(pm_file)
-    pm_df["ASIN"] = pm_df["ASIN"].astype(str)
-    brand_mapping = pm_df.drop_duplicates("ASIN").set_index("ASIN")["Brand"].to_dict()
+    pm_bytes = pm_file.read()
+    pm_file.seek(0)
+    pm_df, brand_mapping = load_pm_cached(pm_bytes)
 
 # ==========================================
 # MAIN TABS INITIALIZATION
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-# ==========================================
-# FILE FORMAT INSTRUCTIONS
-# ==========================================
-with st.expander("📖 File Format Instructions — Click to see expected headers for all files", expanded=False):
-    st.markdown("### Required Column Headers for Each File")
-    st.markdown("Make sure your files have the following column headers (case-sensitive) before uploading.")
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file)
 
-    st.markdown("---")
-    st.markdown("#### 💎 Purchase Master (PM) — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `ASIN` | Amazon Standard Identification Number |
-| `Brand` | Brand name |
-| `Amazon Sku Name` | SKU name (used for Dyson mapping) |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🏷️ Coupon Orders — TXT (Tab-separated)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `product-name` | Product name |
-| `item-status` | Order status (Cancelled rows excluded) |
-| `promotion-ids` | Promotion identifiers (filtered for PLM) |
-| `item-promotion-discount` | Discount amount |
-| `quantity` | Order quantity |
-| `purchase-date` | Purchase date |
-| `ship-postal-code` | Shipping postal code |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🔄 Exchange Data — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `brand` | Brand name |
-| `order_day` | Order date |
-| `seller funding` | Seller funding amount |
-| `liquidator funding` | Liquidator funding amount |
-| `order_id` | Order identifier |
-| `buyback_category` | Exchange category |
-| `forward_flag_status` | Status flag |
-| `total_discount_claimed` | Total discount |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🎁 Freebies Orders — TXT (Tab-separated)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `product-name` | Product name |
-| `item-status` | Order status (Cancelled rows excluded) |
-| `promotion-ids` | Promotion identifiers (filtered for BOGO) |
-| `item-price` | Item price |
-| `quantity` | Order quantity |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 💳 NCEMI Payment — CSV")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `type` | Transaction type (Transfer / Service Fee) |
-| `Sku` | Product SKU |
-| `total` | Total amount |
-| `other transaction fees` | Transaction fees |
-| `other` | Other fees |
-    """)
-
-    st.markdown("#### 💳 NCEMI B2B/B2C — CSV or ZIP (containing CSV)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `Sku` | Product SKU |
-| `Asin` | Product ASIN |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 📢 Advertisement Invoices — PDF")
-    st.markdown("PDF invoices from Amazon Ads. No specific column headers needed — data is extracted automatically.")
-
-    st.markdown("#### 📢 Portfolio Report (Ads Mapping) — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| Any column containing `campaign` or `portfolio` | Campaign name for mapping |
-| Any column containing `brand` | Brand name |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🔄 Replacement Logistic — CSV (header at row 13)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `type` | Transaction type (filtered for 'Order') |
-| `Sku` | Product SKU |
-| `product sales` | Product sales amount (filtered for 0) |
-| `quantity` | Quantity |
-| `total` | Total amount |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🏭 Bergner Orders — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `product-name` | Product name |
-| `item-status` | Order status (Cancelled rows excluded) |
-| `item-price` | Item price |
-| `quantity` | Order quantity |
-    """)
-
-    st.markdown("#### 🏭 Bergner Support File — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `ASIN` | Amazon ASIN |
-| `P/L` | Profit/Loss per unit |
-| `Support Approved` | Approved support quantity |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🧮 Dyson B2B/B2C Report — ZIP (containing CSV)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `Sku` | Product SKU |
-| `Asin` | Product ASIN |
-| `Quantity` | Order quantity |
-| `Transaction Type` | Shipment / Refund / Cancel |
-| `Order Id` | Order identifier |
-| `Invoice Date` | Invoice date (used for month filtering) |
-    """)
-
-    st.markdown("#### 🧮 Dyson Promo — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `ASIN` | Amazon ASIN |
-| `SKU Code` | SKU code |
-| `SSP` | Standard Selling Price |
-| `Cons Promo` | Consumer Promo price |
-| `Margin` | Margin (decimal, e.g. 0.10 for 10%) |
-    """)
-
-    st.markdown("#### 🧮 Dyson Invoice — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `Material_Cd` | Material code |
-| `Qty` | Quantity |
-| `Total_Val` | Total value |
-    """)
-
-    st.markdown("#### 🧮 Dyson Invoice Promo CN — Excel (.xlsx)")
-    st.markdown("""
-| Column Position | Description |
-|--------|-------------|
-| Column D (4th column) | Lookup key (Material code) |
-| Column L (12th column) | Consumer Promo value to return |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 📦 Tramontina Orders — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `product-name` or `product_name` | Product name |
-| `item-status` | Order status (Cancelled rows excluded) |
-| `item-price` | Item price |
-| `quantity` | Order quantity |
-    """)
-
-    st.markdown("#### 📦 Tramontina BAU Offer — Excel (.xlsx, 3 sheets)")
-    st.markdown("""
-| Sheet Name | Key Columns |
-|--------|-------------|
-| `Amazon BAU Price` | `ASIN`, `P/L` |
-| `Freebie` | `ASIN`, `P/L` |
-| `Coupon` | `ASIN`, `P/L` |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 🏭 Bergner Secondary Orders — TXT (Tab-separated)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `quantity` | Order quantity |
-| `item-status` | Order status (Cancelled rows excluded) |
-    """)
-
-    st.markdown("#### 🏭 Bergner Secondary Support — Excel (.xlsx, header at row 3)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `ASIN` | Amazon ASIN |
-| `P/L` | Profit/Loss per unit |
-    """)
-
-    st.markdown("---")
-    st.markdown("#### 📦 Tramontina Secondary Orders — TXT (Tab-separated)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `asin` | Product ASIN |
-| `quantity` | Order quantity |
-| `item-status` | Order status (Cancelled rows excluded) |
-    """)
-
-    st.markdown("#### 📦 Tramontina Secondary Support — Excel (.xlsx)")
-    st.markdown("""
-| Column | Description |
-|--------|-------------|
-| `ASIN` | Amazon ASIN |
-| `P/l` | Profit/Loss per unit |
-    """)
-
-if not (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file):
-    st.info("👋 Welcome! Please upload your data files in the sidebar to generate reports.")
-    st.markdown("""
-    ### 📂 Expected Files:
-    - **Product Master (PM)**: Excel with `ASIN` and `Brand` columns.
-    - **Coupon/Freebies**: Tab-separated TXT order reports.
-    - **Exchange**: Excel with `brand` and `seller funding`.
-    - **NCEMI**: Payment CSV + B2B/B2C order reports for SKU mapping.
-    - **Advertisement**: PDF Invoices and Portfolio Excel for campaign mapping.
-    - **Bergner**: Orders Excel + Bergner Support Excel.
-    - **Dyson**: B2B/B2C ZIP reports + Dyson Promo Excel.
-    - **Tramontina**: Orders Excel + BAU Offer Excel (3 sheets).
-    - **Bergner Secondary**: Orders TXT + Bergner Support Excel.
-    - **Tramontina Secondary**: Orders TXT + Tramontina Support Excel.
-    """)
+if not any_files:
+    st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
+    st.markdown("### 📊 Available Tools")
+    tool_info = [
+        ("🏷️ Coupon", "PLM promotion discount analysis", "PM + Coupon TXT"),
+        ("🔄 Exchange", "Seller & liquidator funding", "Exchange Excel"),
+        ("🎁 Freebies", "BOGO promotion analysis", "PM + Freebies TXT"),
+        ("💳 NCEMI", "No-cost EMI funding breakup", "PM + Payment CSV"),
+        ("📢 Ads", "Ad invoice campaign analysis", "Ad PDFs"),
+        ("🔄 Repl. Logistic", "Zero-sale replacement orders", "PM + Transaction CSV"),
+        ("🏭 Bergner", "P/L on order quantities", "PM + Orders + Support"),
+        ("🧮 Dyson", "Support per net sale", "PM + ZIPs + Promo"),
+        ("📦 Tramontina", "BAU / Freebie / Coupon", "PM + Orders + BAU"),
+        ("🏭 Berg. Sec", "Secondary P&L", "PM + Orders TXT + Support"),
+        ("📦 Tramo Sec", "Secondary P&L", "PM + Orders TXT + Support"),
+    ]
+    cols = st.columns(3)
+    for i, (name, desc, files) in enumerate(tool_info):
+        with cols[i % 3]:
+            st.markdown(f"""
+            <div style="background:white;padding:14px 16px;border-radius:10px;border:1px solid #e5e7eb;margin-bottom:10px;">
+                <b style="font-size:15px;">{name}</b><br>
+                <span style="color:#6b7280;font-size:13px;">{desc}</span><br>
+                <span style="color:#9ca3af;font-size:12px;">📂 {files}</span>
+            </div>
+            """, unsafe_allow_html=True)
     st.stop()
 
 tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary"])
@@ -979,7 +815,7 @@ with tabs[4]:
                         n_df = fill_sku_from_report(n_df, df_rep)
                 except Exception: pass
 
-        pm_full = pd.read_excel(pm_file)
+        pm_full = pm_df.copy()
         # Assuming columns based on ncemi script: 2-SKU, 4-Manager, 6-Brand, 3-Vendor SKU, 7-Product Name
         sku_key = pm_full.columns[2]
         pm_unique = pm_full.drop_duplicates(sku_key)
@@ -1160,7 +996,7 @@ with tabs[6]:
             rl_df["Sku"] = rl_df["Sku"].astype(str).str.strip().str.replace(".0", "", regex=False)
             
             # Map Brand and Brand Manager from PM
-            pm_full_rl = pd.read_excel(pm_file)
+            pm_full_rl = pm_df.copy()
             sku_col_pm = pm_full_rl.columns[2] # Based on NCEMI and Reverse_Logistic logic
             mgr_col_pm = pm_full_rl.columns[4]
             brand_col_pm = pm_full_rl.columns[6]
@@ -1244,8 +1080,8 @@ with tabs[7]:
     if bergner_orders_file and pm_file and bergner_support_file:
         try:
             with st.spinner("Processing Bergner data..."):
-                b_orders = pd.read_excel(bergner_orders_file)
-                b_pm = pd.read_excel(pm_file)
+                b_orders = pd.read_csv(bergner_orders_file, sep="\t", low_memory=False, dtype=str) if bergner_orders_file.name.endswith(".txt") else pd.read_excel(bergner_orders_file)
+                b_pm = pm_df.copy()
                 b_support = pd.read_excel(bergner_support_file, header=1)
 
                 # Map Brand
@@ -1373,7 +1209,7 @@ with tabs[8]:
                     all_zips = (dyson_b2b_zips if dyson_b2b_zips else []) + (dyson_b2c_zips if dyson_b2c_zips else [])
                     if all_zips and pm_file and dyson_promo_file:
                         with st.spinner("Processing combined Dyson data..."):
-                            pivot, processed = process_dyson_data(all_zips, pm_file, dyson_promo_file, past_months)
+                            pivot, processed = process_dyson_data(all_zips, pm_df, dyson_promo_file, past_months)
                             if pivot is not None:
                                 st.session_state[f'dyson_{key}_pivot'] = pivot
                                 st.session_state[f'dyson_{key}_processed'] = processed
@@ -1385,7 +1221,7 @@ with tabs[8]:
                 if st.button(f"🔄 Calculate {key} Support", type="primary", use_container_width=True, key=f"dyson_calc_{key}"):
                     if zip_files_for_tab and pm_file and dyson_promo_file:
                         with st.spinner(f"Processing {key} Dyson data..."):
-                            pivot, processed = process_dyson_data(zip_files_for_tab, pm_file, dyson_promo_file, past_months)
+                            pivot, processed = process_dyson_data(zip_files_for_tab, pm_df, dyson_promo_file, past_months)
                             if pivot is not None:
                                 st.session_state[f'dyson_{key}_pivot'] = pivot
                                 st.session_state[f'dyson_{key}_processed'] = processed
@@ -1561,8 +1397,8 @@ with tabs[9]:
     if tramontina_orders_file and pm_file and tramontina_bau_file:
         try:
             with st.spinner("Processing Tramontina data..."):
-                t_orders = pd.read_excel(tramontina_orders_file)
-                t_pm = pd.read_excel(pm_file)
+                t_orders = pd.read_csv(tramontina_orders_file, sep="\t", low_memory=False, dtype=str) if tramontina_orders_file.name.endswith(".txt") else pd.read_excel(tramontina_orders_file)
+                t_pm = pm_df.copy()
                 t_bau_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Amazon BAU Price")
                 t_freebie_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Freebie")
                 t_coupon_sheet = pd.read_excel(tramontina_bau_file, sheet_name="Coupon")
@@ -1707,7 +1543,7 @@ with tabs[10]:
                 # Load files
                 bs_bergner = pd.read_excel(bergner_sec_file, header=1)
                 bs_df = pd.read_csv(bergner_sec_orders_file, sep="\t", low_memory=False)
-                bs_pm = pd.read_excel(pm_file)
+                bs_pm = pm_df.copy()
 
                 # Clean orders
                 if 'product-name' in bs_df.columns:
@@ -1795,7 +1631,7 @@ with tabs[11]:
                 # Load files
                 ts_tra = pd.read_excel(tramontina_sec_file)
                 ts_df = pd.read_csv(tramontina_sec_orders_file, sep="\t", low_memory=False)
-                ts_pm = pd.read_excel(pm_file)
+                ts_pm = pm_df.copy()
 
                 # Clean orders
                 if 'product-name' in ts_df.columns:
@@ -1931,4 +1767,3 @@ with tabs[0]:
 # Footer
 st.markdown("---")
 st.caption(f"Amazon Support Unified App | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
