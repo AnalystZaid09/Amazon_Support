@@ -509,6 +509,13 @@ with st.sidebar.expander("🍳 Wonderchef Secondary"):
     wonderchef_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="wcf_orders_up",
                                               help="Tab-separated: asin, quantity, item-price")
 
+with st.sidebar.expander("🍴 Hafele Secondary"):
+    st.caption("Hafele Support Excel + Orders TXT • Requires PM")
+    hafele_support_file = st.file_uploader("Hafele Support (Excel)", type=["xlsx", "xls"], key="hafele_sup_up",
+                                            help="Excel: Amazon ASIN, L/P, Event CSP, SKU Code")
+    hafele_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="hafele_orders_up",
+                                           help="Tab-separated: asin, quantity, item-price")
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -524,7 +531,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file)
 
 if not any_files:
     st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
@@ -554,7 +561,7 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary"])
 
 combined_results = []
 
@@ -1804,14 +1811,14 @@ with tabs[12]:
                 wcf_total_units = wcf_support['Sold Units'].sum()
                 wcf_support_pct = (wcf_total_support / wcf_total_psv * 100) if wcf_total_psv != 0 else 0
 
-                total_row = {col: '' for col in wcf_support.columns}
+                total_row = {col: None for col in wcf_support.columns}
                 total_row['Amazon ASIN'] = 'Grand Total'
                 total_row['Sold Units'] = wcf_total_units
                 total_row['Support'] = wcf_total_support
                 total_row['Plan Sales Value'] = wcf_total_psv
                 wcf_support = pd.concat([wcf_support, pd.DataFrame([total_row])], ignore_index=True)
 
-                pct_row = {col: '' for col in wcf_support.columns}
+                pct_row = {col: None for col in wcf_support.columns}
                 pct_row['Amazon ASIN'] = 'Support %'
                 pct_row['Support'] = wcf_support_pct
                 wcf_support = pd.concat([wcf_support, pd.DataFrame([pct_row])], ignore_index=True)
@@ -1862,6 +1869,131 @@ with tabs[12]:
             st.error(f"❌ Error processing Wonderchef Secondary: {str(e)}")
     else:
         st.warning("Please upload Wonderchef GIF Support Excel, Orders TXT, and PM file.")
+
+# ==========================================
+# TAB 14: HAFELE SECONDARY
+# ==========================================
+with tabs[13]:
+    st.header("🍴 Hafele Secondary Support")
+
+    with st.expander("👁️ Preview Sample: Hafele Support Sheet (Hafele Jan Art Event Support Working 2026.xlsx)", expanded=False):
+        _hafele_sample = pd.DataFrame([
+            {"Amazon ASIN": "B0DH6DDR35", "SKU Code": "538.11.233", "Product Name": "Hafele Themis 60 Ceiling Recessed Cookerhood Chimney | 1100 m3/hr Suction | Filterfree Technology", "Sold Units": "", "Corrected NLC": 11520, "Event CSP": 14990, "Bau Commission": 0.08, "Event Commission": 0.08, "Amazon Referral Fee": 1199.2, "Total FBA Fee +GST": 724.8, "DB Margin": 749.5, "Payout": 12316.5, "L/P": 796.5, "Percent": 0.0531, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B0DH689LKG", "SKU Code": "538.11.234", "Product Name": "Hafele Themis 90 Ceiling Recessed Cookerhood Chimney | 1100 m3/hr Suction | Filterfree Technology", "Sold Units": "", "Corrected NLC": 12480, "Event CSP": 15990, "Bau Commission": 0.08, "Event Commission": 0.08, "Amazon Referral Fee": 1279.2, "Total FBA Fee +GST": 811.2, "DB Margin": 799.5, "Payout": 13100.1, "L/P": 620.1, "Percent": 0.0388, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B0DH6D6H2R", "SKU Code": "538.11.232", "Product Name": "Hafele Themis 60 Filterfree Technology Kitchen Chimney with High Suction", "Sold Units": "", "Corrected NLC": 13838, "Event CSP": 15990, "Bau Commission": 0.08, "Event Commission": 0.08, "Amazon Referral Fee": 1279.2, "Total FBA Fee +GST": 759.2, "DB Margin": 799.5, "Payout": 13152.1, "L/P": -685.9, "Percent": -0.0429, "Support": 0, "Plan Sales Value": 0},
+        ])
+        st.caption(f"📄 3 sample rows × {len(_hafele_sample.columns)} columns — read-only preview of expected Hafele Support format")
+        st.dataframe(_hafele_sample, use_container_width=True, height=200)
+
+    if hafele_support_file and hafele_orders_file and pm_file:
+        try:
+            with st.spinner("Processing Hafele Secondary data..."):
+                # Load Hafele sheet
+                haf_support = pd.read_excel(hafele_support_file, header=0)
+
+                # Load orders (tab-separated TXT)
+                haf_orders = pd.read_csv(hafele_orders_file, sep="\t", low_memory=False, dtype=str)
+                haf_pm = pm_df.copy()
+
+                # Clean ASINs
+                haf_orders['asin'] = haf_orders['asin'].astype(str).str.strip()
+                haf_pm['ASIN'] = haf_pm['ASIN'].astype(str).str.strip()
+
+                # Merge Brand from PM
+                haf_orders = haf_orders.merge(haf_pm[['ASIN', 'Brand']], left_on='asin', right_on='ASIN', how='left')
+                haf_orders.drop(columns=['ASIN'], inplace=True, errors='ignore')
+
+                # Convert numeric cols
+                haf_orders['item-price'] = pd.to_numeric(haf_orders['item-price'], errors='coerce')
+                haf_orders = haf_orders[haf_orders['item-price'].notna()]
+                haf_orders['quantity'] = pd.to_numeric(haf_orders['quantity'], errors='coerce').fillna(0)
+
+                # Filter Hafele brand
+                haf_brand_orders = haf_orders[haf_orders['Brand'] == 'Hafele'].copy()
+
+                # Pivot: sold units per ASIN
+                haf_pivot = (
+                    pd.pivot_table(haf_brand_orders, index='asin', values='quantity', aggfunc='sum')
+                    .sort_values(by='quantity', ascending=False)
+                    .reset_index()
+                )
+                haf_pivot.columns = ['Amazon ASIN', 'Sold Units']
+
+                # Map sold units into support sheet
+                haf_support['Amazon ASIN'] = haf_support['Amazon ASIN'].astype(str).str.strip()
+                haf_pivot['Amazon ASIN'] = haf_pivot['Amazon ASIN'].astype(str).str.strip()
+                asin_to_units = dict(zip(haf_pivot['Amazon ASIN'], haf_pivot['Sold Units']))
+                haf_support['Sold Units'] = haf_support['Amazon ASIN'].map(asin_to_units).fillna(0)
+
+                # Compute Support and Plan Sales Value
+                haf_support['L/P'] = pd.to_numeric(haf_support['L/P'], errors='coerce').fillna(0)
+                haf_support['Sold Units'] = pd.to_numeric(haf_support['Sold Units'], errors='coerce').fillna(0)
+                haf_support['Support'] = haf_support['L/P'] * haf_support['Sold Units']
+                haf_support['Plan Sales Value'] = haf_support['Sold Units'] * pd.to_numeric(haf_support['Event CSP'], errors='coerce').fillna(0)
+
+                # Grand Total row
+                haf_total_support = haf_support['Support'].sum()
+                haf_total_psv = haf_support['Plan Sales Value'].sum()
+                haf_total_units = haf_support['Sold Units'].sum()
+                haf_support_pct = (haf_total_support / haf_total_psv * 100) if haf_total_psv != 0 else 0
+
+                total_row = {col: None for col in haf_support.columns}
+                total_row['Amazon ASIN'] = 'Grand Total'
+                total_row['Sold Units'] = haf_total_units
+                total_row['Support'] = haf_total_support
+                total_row['Plan Sales Value'] = haf_total_psv
+                haf_support = pd.concat([haf_support, pd.DataFrame([total_row])], ignore_index=True)
+
+                pct_row = {col: None for col in haf_support.columns}
+                pct_row['Amazon ASIN'] = 'Support %'
+                pct_row['Support'] = haf_support_pct
+                haf_support = pd.concat([haf_support, pd.DataFrame([pct_row])], ignore_index=True)
+
+            st.success(f"✅ Hafele Secondary processed! Total Support: ₹{haf_total_support:,.2f} | Support %: {haf_support_pct:.2f}%")
+
+            # KPI Cards
+            data_rows_haf = haf_support[~haf_support['Amazon ASIN'].isin(['Grand Total', 'Support %'])]
+            profitable = int((pd.to_numeric(data_rows_haf['L/P'], errors='coerce') > 0).sum())
+            loss_making = int((pd.to_numeric(data_rows_haf['L/P'], errors='coerce') < 0).sum())
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Total SKUs", len(data_rows_haf))
+            k2.metric("Profitable", profitable)
+            k3.metric("Loss-Making", loss_making)
+            k4.metric("Total Support", f"₹{haf_total_support:,.0f}")
+            k5.metric("Support %", f"{haf_support_pct:.2f}%")
+
+            # Sub-tabs
+            haf_tab1, haf_tab2, haf_tab3 = st.tabs(["📋 Final Support Table", "📦 Units Sold Pivot", "🔍 Hafele Orders"])
+
+            with haf_tab1:
+                st.subheader("Hafele Support Sheet (Final)")
+                # Color code P/L or Support? Original code had color functions.
+                # Let's use simple highlight for now as in other secondary tabs.
+                st.dataframe(haf_support, use_container_width=True, height=500)
+                st.download_button("📥 Download Support Table", convert_to_excel(haf_support, 'Hafele Support'), "hafele_support.xlsx")
+
+            with haf_tab2:
+                st.subheader("Units Sold per ASIN")
+                st.dataframe(haf_pivot, use_container_width=True, height=400)
+                st.download_button("📥 Download Units Pivot", convert_to_excel(haf_pivot, 'Units Pivot'), "hafele_pivot.xlsx")
+
+            with haf_tab3:
+                st.subheader("Amazon Orders — Hafele Brand")
+                st.caption(f"{len(haf_brand_orders):,} rows")
+                st.dataframe(haf_brand_orders.head(500), use_container_width=True, height=400)
+                if len(haf_brand_orders) > 500:
+                    st.info(f"Showing first 500 of {len(haf_brand_orders):,} rows")
+                st.download_button("📥 Download Orders", convert_to_excel(haf_brand_orders, 'Hafele Orders'), "hafele_orders.xlsx")
+
+            # Combined Summary
+            haf_combined_df = pd.DataFrame({"Brand": ["Hafele (Secondary)"], "Hafele Sec Support": [haf_total_support]})
+            combined_results.append(haf_combined_df)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Hafele Secondary: {str(e)}")
+    else:
+        st.warning("Please upload Hafele Support Excel, Orders TXT, and PM file.")
 
 # ==========================================
 # FINAL COMBINED REPORT POPULATION
