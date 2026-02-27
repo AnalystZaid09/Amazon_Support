@@ -516,6 +516,13 @@ with st.sidebar.expander("🍴 Hafele Secondary"):
     hafele_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="hafele_orders_up",
                                            help="Tab-separated: asin, quantity, item-price")
 
+with st.sidebar.expander("📺 Panasonic Secondary"):
+    st.caption("Panasonic Support Excel + Orders TXT • Requires PM")
+    panasonic_support_file = st.file_uploader("Panasonic Support (Excel)", type=["xlsx", "xls"], key="pana_sup_up",
+                                               help="Excel (header row 2): Amazon ASIN, L/P, Current CSP, SKU Code")
+    panasonic_orders_file = st.file_uploader("Orders (TXT)", type=["txt", "tsv", "csv"], key="pana_orders_up",
+                                              help="Tab-separated: asin, quantity, item-price")
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -531,7 +538,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file)
 
 if not any_files:
     st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
@@ -561,7 +568,7 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary"])
 
 combined_results = []
 
@@ -1994,6 +2001,131 @@ with tabs[13]:
             st.error(f"❌ Error processing Hafele Secondary: {str(e)}")
     else:
         st.warning("Please upload Hafele Support Excel, Orders TXT, and PM file.")
+
+# ==========================================
+# TAB 15: PANASONIC SECONDARY
+# ==========================================
+with tabs[14]:
+    st.header("📺 Panasonic Secondary Support")
+
+    with st.expander("👁️ Preview Sample: Panasonic Support Sheet (Panasonicsupport.xlsx)", expanded=False):
+        _pana_sample = pd.DataFrame([
+            {"Amazon ASIN": "B0BT9DYKHN", "Sold Units": "", "SKU Code": 63153844, "Desc": "SKT PLUS PROFESSIONAL", "Corrected NLC": 3082.0, "Current CSP": 4499, "Current Commission": 0.045, "Amazon Referral Fee": 202.455, "Monthly Storage Fee": 35.07, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 227.5, "Return Fee": 44.99, "GST": 103.5927, "Total FBA Fee +GST": 679.1077, "DB Margin": 224.95, "Payout": 3594.9423, "L/P": 512.9423, "Percent": 0.114, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B098P7STVY", "Sold Units": "", "SKU Code": 63153748, "Desc": "Wonderchef Nutri Blend Bolt FP 600W Black", "Corrected NLC": 3041.22, "Current CSP": 4299, "Current Commission": 0.045, "Amazon Referral Fee": 193.455, "Monthly Storage Fee": 28.94, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 188.0, "Return Fee": 42.99, "GST": 93.3993, "Total FBA Fee +GST": 612.2843, "DB Margin": 214.95, "Payout": 3471.7657, "L/P": 430.5457, "Percent": 0.1002, "Support": 0, "Plan Sales Value": 0},
+            {"Amazon ASIN": "B01HXWI2P2", "Sold Units": "", "SKU Code": 63151935, "Desc": "Smoky Grill Electric Barbeque", "Corrected NLC": 2983.0, "Current CSP": 4499, "Current Commission": 0.125, "Amazon Referral Fee": 562.375, "Monthly Storage Fee": 60.43, "Fixed Closing Fee": 51, "Pick & Pack Fee": 14.5, "Weight Handling Fee": 256.04, "Return Fee": 44.99, "GST": 178.0803, "Total FBA Fee +GST": 1167.4153, "DB Margin": 224.95, "Payout": 3106.6347, "L/P": 123.6347, "Percent": 0.0275, "Support": 0, "Plan Sales Value": 0},
+        ])
+        st.caption(f"📄 3 sample rows × {len(_pana_sample.columns)} columns — read-only preview of expected Panasonic Support format")
+        st.dataframe(_pana_sample, use_container_width=True, height=200)
+
+    if panasonic_support_file and panasonic_orders_file and pm_file:
+        try:
+            with st.spinner("Processing Panasonic Secondary data..."):
+                # Load Panasonic sheet (header at row 2 -> header=1)
+                pana_support = pd.read_excel(panasonic_support_file, header=1)
+
+                # Load orders (tab-separated TXT)
+                pana_orders = pd.read_csv(panasonic_orders_file, sep="\t", low_memory=False, dtype=str)
+                pana_pm = pm_df.copy()
+
+                # Clean ASINs
+                pana_orders['asin'] = pana_orders['asin'].astype(str).str.strip()
+                pana_pm['ASIN'] = pana_pm['ASIN'].astype(str).str.strip()
+
+                # Merge Brand from PM
+                pana_orders = pana_orders.merge(pana_pm[['ASIN', 'Brand']], left_on='asin', right_on='ASIN', how='left')
+                pana_orders.drop(columns=['ASIN'], inplace=True, errors='ignore')
+
+                # Convert numeric cols
+                pana_orders['item-price'] = pd.to_numeric(pana_orders['item-price'], errors='coerce')
+                pana_orders = pana_orders[pana_orders['item-price'].notna()]
+                pana_orders['quantity'] = pd.to_numeric(pana_orders['quantity'], errors='coerce').fillna(0)
+
+                # Filter Panasonic brand
+                pana_brand_orders = pana_orders[pana_orders['Brand'] == 'Panasonic'].copy()
+
+                # Pivot: sold units per ASIN
+                pana_pivot = (
+                    pd.pivot_table(pana_brand_orders, index='asin', values='quantity', aggfunc='sum')
+                    .sort_values(by='quantity', ascending=False)
+                    .reset_index()
+                )
+                pana_pivot.columns = ['Amazon ASIN', 'Sold Units']
+
+                # Map sold units into support sheet
+                pana_support['Amazon ASIN'] = pana_support['Amazon ASIN'].astype(str).str.strip()
+                pana_pivot['Amazon ASIN'] = pana_pivot['Amazon ASIN'].astype(str).str.strip()
+                asin_to_units = dict(zip(pana_pivot['Amazon ASIN'], pana_pivot['Sold Units']))
+                pana_support['Sold Units'] = pana_support['Amazon ASIN'].map(asin_to_units).fillna(0)
+
+                # Compute Support and Plan Sales Value
+                pana_support['L/P'] = pd.to_numeric(pana_support['L/P'], errors='coerce').fillna(0)
+                pana_support['Sold Units'] = pd.to_numeric(pana_support['Sold Units'], errors='coerce').fillna(0)
+                pana_support['Support'] = pana_support['L/P'] * pana_support['Sold Units']
+                pana_support['Plan Sales Value'] = pana_support['Sold Units'] * pd.to_numeric(pana_support['Current CSP'], errors='coerce').fillna(0)
+
+                # Grand Total row
+                pana_total_support = pana_support['Support'].sum()
+                pana_total_psv = pana_support['Plan Sales Value'].sum()
+                pana_total_units = pana_support['Sold Units'].sum()
+                pana_support_pct = (pana_total_support / pana_total_psv * 100) if pana_total_psv != 0 else 0
+
+                total_row = {col: None for col in pana_support.columns}
+                total_row['Amazon ASIN'] = 'Grand Total'
+                total_row['Sold Units'] = pana_total_units
+                total_row['Current CSP'] = pd.to_numeric(pana_support['Current CSP'], errors='coerce').sum()
+                total_row['Support'] = pana_total_support
+                total_row['Plan Sales Value'] = pana_total_psv
+                pana_support = pd.concat([pana_support, pd.DataFrame([total_row])], ignore_index=True)
+
+                pct_row = {col: None for col in pana_support.columns}
+                pct_row['Amazon ASIN'] = 'Support %'
+                pct_row['Support'] = pana_support_pct
+                pana_support = pd.concat([pana_support, pd.DataFrame([pct_row])], ignore_index=True)
+
+            st.success(f"✅ Panasonic Secondary processed! Total Support: ₹{pana_total_support:,.2f} | Support %: {pana_support_pct:.2f}%")
+
+            # KPI Cards
+            data_rows_pana = pana_support[~pana_support['Amazon ASIN'].isin(['Grand Total', 'Support %'])]
+            profitable = int((pd.to_numeric(data_rows_pana['L/P'], errors='coerce') > 0).sum())
+            loss_making = int((pd.to_numeric(data_rows_pana['L/P'], errors='coerce') < 0).sum())
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Total SKUs", len(data_rows_pana))
+            k2.metric("Profitable", profitable)
+            k3.metric("Loss-Making", loss_making)
+            k4.metric("Total Support", f"₹{pana_total_support:,.0f}")
+            k5.metric("Support %", f"{pana_support_pct:.2f}%")
+
+            # Sub-tabs
+            pana_tab1, pana_tab2, pana_tab3 = st.tabs(["📋 Final Support Table", "📦 Units Sold Pivot", "🔍 Panasonic Orders"])
+
+            with pana_tab1:
+                st.subheader("Panasonic Support Sheet (Final)")
+                st.dataframe(pana_support, use_container_width=True, height=500)
+                st.download_button("📥 Download Support Table", convert_to_excel(pana_support, 'Panasonic Support'), "panasonic_support.xlsx")
+
+            with pana_tab2:
+                st.subheader("Units Sold per ASIN")
+                st.dataframe(pana_pivot, use_container_width=True, height=400)
+                st.download_button("📥 Download Units Pivot", convert_to_excel(pana_pivot, 'Units Pivot'), "panasonic_pivot.xlsx")
+
+            with pana_tab3:
+                st.subheader("Amazon Orders — Panasonic Brand")
+                st.caption(f"{len(pana_brand_orders):,} rows")
+                st.dataframe(pana_brand_orders.head(500), use_container_width=True, height=400)
+                if len(pana_brand_orders) > 500:
+                    st.info(f"Showing first 500 of {len(pana_brand_orders):,} rows")
+                st.download_button("📥 Download Orders", convert_to_excel(pana_brand_orders, 'Panasonic Orders'), "panasonic_orders.xlsx")
+
+            # Combined Summary
+            pana_combined_df = pd.DataFrame({"Brand": ["Panasonic (Secondary)"], "Panasonic Sec Support": [pana_total_support]})
+            combined_results.append(pana_combined_df)
+
+        except Exception as e:
+            st.error(f"❌ Error processing Panasonic Secondary: {str(e)}")
+    else:
+        st.warning("Please upload Panasonic Support Excel, Orders TXT, and PM file.")
+
 
 # ==========================================
 # FINAL COMBINED REPORT POPULATION
