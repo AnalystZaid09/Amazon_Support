@@ -534,6 +534,14 @@ with st.sidebar.expander("📦 Inalsa Secondary"):
     inalsa_storage_csv = st.file_uploader("Storage Fee CSV", type=["csv"], key="inalsa_storage_up",
                                           help="Storage fee report (e.g., 399153020430.csv)")
 
+with st.sidebar.expander("🔪 Victorinox Secondary"):
+    st.caption("Support Excel (multi-sheet) + Orders TXT • Requires PM")
+    victorinox_support_file = st.file_uploader("Support Excel", type=["xlsx", "xls"], key="vic_sup_up",
+                                               help="e.g. CN Support Working for Nov Dec25. Multi-sheet supported.")
+    victorinox_orders_file = st.file_uploader("Orders TXT/TSV", type=["txt", "tsv", "csv"], key="vic_orders_up",
+                                              help="Tab-separated: asin, quantity, item-price")
+
+
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
 # ==========================================
@@ -549,7 +557,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv or victorinox_support_file or victorinox_orders_file)
 
 if not any_files:
     st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
@@ -579,7 +587,7 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary", "🔪 Victorinox Secondary"])
 
 combined_results = []
 
@@ -2359,6 +2367,231 @@ with tabs[15]:
             st.error(f"❌ Error processing Inalsa Secondary: {str(e)}")
     else:
         st.warning("Please upload B2B/B2C ZIPs, PM file, Unified Transaction CSV, and Storage Fee CSV.")
+
+# ==========================================
+# TAB 17: VICTORINOX SECONDARY
+# ==========================================
+with tabs[16]:
+    st.header("🔪 Victorinox Secondary Support")
+    st.markdown("Upload Victorinox Support Excel (auto-detects sheets) + Amazon Orders TXT + Purchase Master.")
+
+    if victorinox_support_file and victorinox_orders_file and pm_file:
+        try:
+            # Re-read support_file to get sheet names
+            victorinox_support_file.seek(0)
+            support_bytes = victorinox_support_file.read()
+            xl_file = pd.ExcelFile(io.BytesIO(support_bytes))
+            all_sheet_names = xl_file.sheet_names
+
+            st.markdown("### 📋 Select Sheets to Process")
+            
+            # Using unique keys for multiselect
+            if "vic_select_all" not in st.session_state:
+                st.session_state.vic_select_all = False
+
+            col_sel1, col_sel2 = st.columns([4, 1])
+            with col_sel2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("✅ Select All Sheets" if not st.session_state.vic_select_all else "❌ Deselect All"):
+                    st.session_state.vic_select_all = not st.session_state.vic_select_all
+                    st.rerun()
+
+            with col_sel1:
+                default_sheets = all_sheet_names if st.session_state.vic_select_all else [all_sheet_names[0]]
+                selected_sheets = st.multiselect(
+                    f"Choose sheets to process ({len(all_sheet_names)} available):",
+                    options=all_sheet_names,
+                    default=default_sheets,
+                    help="Select one or multiple sheets. Each sheet gets its own results section below."
+                )
+
+            if selected_sheets:
+                with st.spinner("Loading Orders and Purchase Master..."):
+                    victorinox_orders_file.seek(0)
+                    df_orders = pd.read_csv(victorinox_orders_file, sep="\t", low_memory=False)
+                    df_pm = pm_df.copy()
+
+                    df_orders["asin"] = df_orders["asin"].astype(str).str.strip()
+                    df_pm["ASIN"] = df_pm["ASIN"].astype(str).str.strip()
+
+                    df_orders = df_orders.merge(
+                        df_pm[["ASIN", "Brand"]],
+                        left_on="asin", right_on="ASIN", how="left"
+                    )
+                    df_orders.drop(columns=["ASIN"], inplace=True, errors="ignore")
+
+                def run_vic_pipeline(sheet_name, supp_bytes, df_orders_base):
+                    # Load sheet (header on row 2 → header=1)
+                    df = pd.read_excel(io.BytesIO(supp_bytes), header=1, sheet_name=sheet_name)
+                    df["ASIN"] = df["ASIN"].astype(str).str.strip()
+
+                    # Filter Victorinox brand first, then item-price
+                    df_vic = df_orders_base[df_orders_base["Brand"] == "Victorinox"].copy()
+                    df_vic["item-price"] = pd.to_numeric(df_vic["item-price"], errors="coerce")
+                    df_vic = df_vic[df_vic["item-price"].notna()]
+
+                    # Pivot: qty sold per ASIN
+                    pivot = (
+                        pd.pivot_table(df_vic, index="asin", values="quantity", aggfunc="sum")
+                        .sort_values(by="quantity", ascending=False)
+                        .reset_index()
+                    )
+                    pivot.columns = ["ASIN", "Qty Sold"]
+                    pivot["ASIN"] = pivot["ASIN"].astype(str).str.strip()
+
+                    # Map qty sold into support sheet
+                    asin_map = dict(zip(pivot["ASIN"], pivot["Qty Sold"]))
+                    df["Qty Sold"] = df["ASIN"].map(asin_map).fillna(0)
+
+                    # Numeric coerce
+                    df["NLC Diff"] = pd.to_numeric(df["NLC Diff"], errors="coerce").fillna(0)
+                    df["Qty Sold"] = pd.to_numeric(df["Qty Sold"], errors="coerce").fillna(0)
+
+                    # CN Value = NLC Diff × Qty Sold
+                    df["CN Value"] = df["NLC Diff"] * df["Qty Sold"]
+
+                    # Grand Total row
+                    total_row = {col: None for col in df.columns}
+                    total_row["ASIN"] = "Grand Total"
+                    total_row["Qty Sold"] = df["Qty Sold"].sum()
+                    total_row["NLC Diff"] = df["NLC Diff"].sum()
+                    total_row["CN Value"] = df["CN Value"].sum()
+                    df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+
+                    return df, df_vic, pivot
+
+                results = {}
+                pipeline_errors = []
+
+                with st.spinner(f"Running pipeline on {len(selected_sheets)} sheet(s)..."):
+                    for sheet in selected_sheets:
+                        try:
+                            vdf, df_vic, piv = run_vic_pipeline(sheet, support_bytes, df_orders)
+                            results[sheet] = (vdf, df_vic, piv)
+                        except Exception as e:
+                            pipeline_errors.append((sheet, str(e)))
+
+                if pipeline_errors:
+                    for sheet, err in pipeline_errors:
+                        st.error(f"❌ Error processing sheet **{sheet}**: {err}")
+
+                if results:
+                    st.success(f"✅ Pipeline complete for {len(results)} sheet(s)!")
+
+                    def safe_fmt(fmt_str):
+                        def _fmt(val):
+                            if val == "" or val is None or pd.isna(val):
+                                return ""
+                            try:
+                                return fmt_str.format(float(val))
+                            except (ValueError, TypeError):
+                                return str(val)
+                        return _fmt
+
+                    NUM_FMT = {
+                        "MRP": safe_fmt("{:,.2f}"), "BAU Discount": safe_fmt("{:.1f}%"),
+                        "Event Discount": safe_fmt("{:.1f}%"), "BAU    NLC": safe_fmt("{:,.4f}"),
+                        "Event NLC": safe_fmt("{:,.4f}"), "NLC Diff": safe_fmt("{:,.4f}"),
+                        "Qty Sold": safe_fmt("{:,.0f}"), "CN Value": safe_fmt("{:,.3f}"),
+                    }
+                    SHOW_COLS_ORDER = ["SKU", "Category", "ASIN", "Name", "MRP", "BAU Discount", "Event Discount", "BAU    NLC", "Event NLC", "NLC Diff", "Qty Sold", "CN Value"]
+
+                    st.subheader(f"📂 Results ({len(results)} Sheets)")
+                    sheet_tabs = st.tabs([f"📄 {name}" for name in results.keys()])
+
+                    total_victorinox_cn = 0
+
+                    for idx, (tab, (sheet_name, (vdf, df_vic, piv))) in enumerate(zip(sheet_tabs, results.items())):
+                        with tab:
+                            summary_mask = vdf["ASIN"] == "Grand Total"
+                            summary_rows = vdf[summary_mask]
+                            data_rows = vdf[~summary_mask].copy()
+
+                            total_cn = float(vdf.iloc[-1]["CN Value"])
+                            total_victorinox_cn += total_cn
+                            total_skus = len(data_rows)
+                            positive_nlc = int((pd.to_numeric(data_rows["NLC Diff"], errors="coerce") > 0).sum())
+                            zero_nlc = int((pd.to_numeric(data_rows["NLC Diff"], errors="coerce") == 0).sum())
+                            orders_total = int(df_vic["quantity"].sum()) if "quantity" in df_vic.columns else 0
+
+                            k1, k2, k3, k4, k5 = st.columns(5)
+                            k1.metric("Total SKUs", total_skus)
+                            k2.metric("SKUs with NLC Diff", positive_nlc)
+                            k3.metric("SKUs — Zero NLC Diff", zero_nlc)
+                            k4.metric("Total Orders", f"{orders_total:,}")
+                            k5.metric("Total CN Value", format_currency(total_cn))
+
+                            t1, t2, t3, t4 = st.tabs(["📋 Final Table", "📊 Charts", "🔍 Orders Detail", "📦 Units Sold Pivot"])
+
+                            with t1:
+                                fl1, fl2 = st.columns([3, 2])
+                                with fl1:
+                                    search = st.text_input("🔍 Search Product Name", "", key=f"vic_search_{idx}")
+                                with fl2:
+                                    cat_options = ["All"] + sorted(data_rows["Category"].dropna().unique().tolist()) if "Category" in data_rows.columns else ["All"]
+                                    cat_filter = st.selectbox("Filter by Category", cat_options, key=f"vic_cat_{idx}")
+
+                                display = data_rows.copy()
+                                if search:
+                                    display = display[display["Name"].astype(str).str.contains(search, case=False, na=False)]
+                                if cat_filter != "All" and "Category" in display.columns:
+                                    display = display[display["Category"] == cat_filter]
+
+                                show_cols = [c for c in SHOW_COLS_ORDER if c in display.columns]
+                                sum_show = [c for c in show_cols if c in summary_rows.columns]
+                                full_display = pd.concat([display[show_cols], summary_rows[sum_show]], ignore_index=True)
+
+                                def highlight_rows(row):
+                                    if row.get("ASIN") == "Grand Total":
+                                        return ["background-color:#fff3cd;font-weight:bold;color:#856404"] * len(row)
+                                    try:
+                                        v = float(row.get("NLC Diff", 0))
+                                        color = "background-color:#d4edda;color:#155724" if v > 0 else ""
+                                        return [color if col == "NLC Diff" else "" for col in row.index]
+                                    except:
+                                        return ["" for _ in row.index]
+
+                                styled = full_display.style.apply(highlight_rows, axis=1).format({k: v for k, v in NUM_FMT.items() if k in show_cols})
+                                st.dataframe(styled, use_container_width=True, height=400)
+                                st.download_button("⬇️ Download Table", display[show_cols].to_csv(index=False).encode("utf-8"), f"victorinox_table_{sheet_name}.csv", "text/csv", key=f"vic_dl_tbl_{idx}")
+
+                            with t2:
+                                chart_data = data_rows.copy()
+                                for col in ["NLC Diff", "CN Value", "Qty Sold"]:
+                                    if col in chart_data.columns:
+                                        chart_data[col] = pd.to_numeric(chart_data[col], errors="coerce")
+
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.markdown("**Top 20 – NLC Diff by SKU**")
+                                    if "Name" in chart_data.columns and "NLC Diff" in chart_data.columns:
+                                        top_nlc = chart_data[["Name", "NLC Diff"]].dropna().sort_values("NLC Diff", ascending=False).head(20).set_index("Name")
+                                        st.bar_chart(top_nlc)
+                                with c2:
+                                    st.markdown("**CN Value by SKU (Top 20)**")
+                                    if "Name" in chart_data.columns and "CN Value" in chart_data.columns:
+                                        cn_chart = chart_data[["Name", "CN Value"]].dropna().sort_values("CN Value", ascending=False).head(20).set_index("Name")
+                                        st.bar_chart(cn_chart)
+
+                            with t3:
+                                st.caption(f"{len(df_vic):,} rows after brand + item-price filter")
+                                st.dataframe(df_vic.head(1000), use_container_width=True, height=400)
+                                st.download_button("⬇️ Download Orders", df_vic.to_csv(index=False).encode("utf-8"), f"victorinox_orders_{sheet_name}.csv", "text/csv", key=f"vic_dl_ord_{idx}")
+
+                            with t4:
+                                st.dataframe(piv, use_container_width=True, height=400)
+                                st.download_button("⬇️ Download Pivot", piv.to_csv(index=False).encode("utf-8"), f"victorinox_pivot_{sheet_name}.csv", "text/csv", key=f"vic_dl_piv_{idx}")
+
+                    # Combined Summary
+                    vic_combined_df = pd.DataFrame({"Brand": ["Victorinox (Secondary)"], "Victorinox Sec CN Value": [total_victorinox_cn]})
+                    combined_results.append(vic_combined_df)
+            else:
+                st.warning("Please select at least one sheet to process from the Victorinox Support Excel.")
+
+        except Exception as e:
+            st.error(f"❌ Error initializing Victorinox Secondary data: {str(e)}")
+    else:
+        st.warning("Please upload Victorinox Support Excel, Orders TXT, and PM file.")
 
 # ==========================================
 
