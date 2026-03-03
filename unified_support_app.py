@@ -74,6 +74,14 @@ def normalize_sku(val):
     if val.endswith(".0"): val = val[:-2]
     return val
 
+def make_arrow_safe(df):
+    """Convert all columns to string to avoid Arrow serialization issues in streamlit"""
+    df = df.copy().reset_index(drop=True)
+    for col in df.columns:
+        df[col] = df[col].astype(str)
+    return df
+
+
 @st.cache_data
 def convert_to_excel(df, sheet_name="Report"):
     output = io.BytesIO()
@@ -832,88 +840,132 @@ with tabs[3]:
 with tabs[4]:
     st.header("💳 NCEMI Promotion Analysis")
     if ncemi_payment_file and pm_file:
-        p_df = pd.read_csv(ncemi_payment_file, skiprows=11)
-        n_df = p_df[p_df["type"] == "Order"].copy()
-        
-        for col in ["product sales", "total"]:
-            n_df[col] = pd.to_numeric(n_df[col].astype(str).str.replace(",",""), errors="coerce")
+        try:
+            # Payment CSV Loading
+            p_df = pd.read_csv(ncemi_payment_file, skiprows=11)
             
-        n_df = n_df[n_df["product sales"] == 0]
-        n_df["Sku"] = n_df["Sku"].apply(normalize_sku)
-        n_df["order id"] = n_df["order id"].apply(normalize_sku)
-        
-        if ncemi_support_files:
-            for f in ncemi_support_files:
-                try:
-                    df_rep = pd.read_csv(f) if f.name.endswith(".csv") else None
-                    if f.name.endswith(".zip"):
-                        with zipfile.ZipFile(f) as z:
-                            csv_name = [name for name in z.namelist() if name.endswith(".csv")][0]
-                            with z.open(csv_name) as zf:
-                                df_rep = pd.read_csv(zf)
-                    if df_rep is not None:
-                        n_df = fill_sku_from_report(n_df, df_rep)
-                except Exception: pass
+            # Cleaning numeric columns like the new support_ncemi.py
+            pay_num_cols = ["other transaction fees", "other", "total", "product sales"]
+            for col in pay_num_cols:
+                if col in p_df.columns:
+                    p_df[col] = pd.to_numeric(p_df[col].astype(str).str.replace(",",""), errors="coerce")
+            
+            n_df = p_df[p_df["type"] == "Order"].copy()
+            n_df = n_df[n_df["product sales"] == 0]
+            
+            n_df["Sku"] = n_df["Sku"].apply(normalize_sku)
+            n_df["order id"] = n_df["order id"].apply(normalize_sku)
+            
+            # Filter rows with missing SKU only (as per latest script logic if applicable)
+            # Actually, the user script does: df = df[df["Sku"].isna() | (df["Sku"] == "")]
+            # But the unified app merges. Let's stick closer to the user script's filtering if that was the intent.
+            # Looking at support_ncemi.py line 112: df = df[df["Sku"].isna() | (df["Sku"] == "")]
+            # I will apply this filter to strictly follow the "updated" logic.
+            n_df = n_df[n_df["Sku"].isna() | (n_df["Sku"] == "")]
+            
+            if ncemi_support_files:
+                for f in ncemi_support_files:
+                    try:
+                        df_rep = None
+                        if f.name.endswith(".zip"):
+                            with zipfile.ZipFile(f) as z:
+                                csv_name = [name for name in z.namelist() if name.endswith(".csv")][0]
+                                with z.open(csv_name) as zf:
+                                    df_rep = pd.read_csv(zf)
+                        else:
+                            df_rep = pd.read_csv(f)
+                            
+                        if df_rep is not None:
+                            # Using helper logic for filling SKU
+                            # order_col_idx=4, sku_col_idx=13 as per latest script
+                            order_col = df_rep.columns[4]
+                            sku_col = df_rep.columns[13]
+                            
+                            df_rep[order_col] = df_rep[order_col].apply(normalize_sku)
+                            df_rep[sku_col] = df_rep[sku_col].apply(normalize_sku)
+                            
+                            lookup = (
+                                df_rep.dropna(subset=[order_col])
+                                .drop_duplicates(order_col)
+                                .set_index(order_col)[sku_col]
+                                .to_dict()
+                            )
+                            
+                            mask = n_df["Sku"].isna() | (n_df["Sku"] == "")
+                            n_df.loc[mask, "Sku"] = n_df.loc[mask, "order id"].map(lookup)
+                    except Exception as e:
+                        st.warning(f"Error processing {f.name}: {e}")
 
-        pm_full = pm_df.copy()
-        # Assuming columns based on ncemi script: 2-SKU, 4-Manager, 6-Brand, 3-Vendor SKU, 7-Product Name
-        sku_key = pm_full.columns[2]
-        pm_unique = pm_full.drop_duplicates(sku_key)
-        
-        n_df["Brand"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[6]])
-        n_df["Brand Manager"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[4]])
-        n_df["Vendor SKU"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[3]])
-        n_df["Product Name"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[7]])
-        
-        st.success(f"✅ Processed {len(n_df)} NCEMI records. {n_df['Sku'].notna().sum()} SKUs filled.")
-        
-        # Sub-tabs for NCEMI
-        n_tab1, n_tab2, n_tab3, n_tab4 = st.tabs(["📈 Brand Analysis", "👥 Brand Manager Analysis", "💰 Service Fees", "📋 Raw Data"])
-        
-        with n_tab1:
-            st.subheader("Brand-wise Summary")
-            n_pivot_brand = n_df.groupby("Brand")["total"].sum().reset_index()
-            n_pivot_brand["total"] = n_pivot_brand["total"].abs()
+            # Re-apply PM Mapping
+            pm_full = pm_df.copy()
+            # Mapping columns: 2-SKU, 4-Manager, 6-Brand, 3-Vendor SKU, 7-Product Name
+            sku_key = pm_full.columns[2]
+            pm_full[sku_key] = pm_full[sku_key].apply(normalize_sku)
+            n_df["Sku"] = n_df["Sku"].apply(normalize_sku)
             
-            grand_total_n = n_pivot_brand["total"].sum()
-            summary_n = pd.DataFrame({"Brand": ["Grand Total"], "total": [grand_total_n]})
-            n_pivot_brand_display = pd.concat([n_pivot_brand, summary_n], ignore_index=True)
+            pm_unique = pm_full.drop_duplicates(sku_key)
             
-            st.dataframe(n_pivot_brand_display.style.format({"total": format_currency}), use_container_width=True)
-            st.download_button("📥 Download Brand Analysis", n_pivot_brand_display.to_csv(index=False).encode(), "ncemi_brand_analysis.csv")
-            combined_results.append(n_pivot_brand.rename(columns={"total": "NCEMI Funding"}))
+            n_df["Brand"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[6]])
+            n_df["Brand Manager"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[4]])
+            n_df["Vendor SKU"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[3]])
+            n_df["Product Name"] = n_df["Sku"].map(pm_unique.set_index(sku_key)[pm_full.columns[7]])
+            
+            st.success(f"✅ Processed {len(n_df)} NCEMI records. {n_df['Sku'].notna().sum()} SKUs filled.")
+            
+            # Sub-tabs for NCEMI
+            n_tab1, n_tab2, n_tab3, n_tab4 = st.tabs(["📈 Brand Analysis", "👥 Brand Manager Analysis", "💰 Service Fees", "📋 Raw Data"])
+            
+            with n_tab1:
+                st.subheader("Brand-wise Summary")
+                n_pivot_brand = n_df.groupby("Brand")["total"].sum().reset_index()
+                
+                grand_total_n = n_pivot_brand["total"].sum()
+                summary_n = pd.DataFrame({"Brand": ["Grand Total"], "total": [grand_total_n]})
+                n_pivot_brand_display = pd.concat([n_pivot_brand, summary_n], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(n_pivot_brand_display), use_container_width=True)
+                st.download_button("📥 Download Brand Analysis (CSV)", n_pivot_brand_display.to_csv(index=False).encode(), "ncemi_brand_analysis.csv")
+                
+                # For combined summary - use absolute values if needed or raw?
+                # The user script doesn't abs() in create_pivot_table, but does in display?
+                # Looking at support_ncemi.py line 161: grand_total = pivot["total"].sum()
+                # Line 249: Download CSV. 
+                # I'll keep it as is.
+                combined_results.append(n_pivot_brand.rename(columns={"total": "NCEMI Funding"}))
 
-        with n_tab2:
-            st.subheader("Brand Manager-wise Summary")
-            n_pivot_mgr = n_df.groupby("Brand Manager")["total"].sum().reset_index()
-            n_pivot_mgr["total"] = n_pivot_mgr["total"].abs()
-            
-            summary_mgr = pd.DataFrame({"Brand Manager": ["Grand Total"], "total": [n_pivot_mgr["total"].sum()]})
-            n_pivot_mgr_display = pd.concat([n_pivot_mgr, summary_mgr], ignore_index=True)
-            st.dataframe(n_pivot_mgr_display.style.format({"total": format_currency}), use_container_width=True)
-            st.download_button("📥 Download Manager Analysis", n_pivot_mgr_display.to_csv(index=False).encode(), "ncemi_manager_analysis.csv")
+            with n_tab2:
+                st.subheader("Brand Manager-wise Summary")
+                n_pivot_mgr = n_df.groupby("Brand Manager")["total"].sum().reset_index()
+                
+                summary_mgr = pd.DataFrame({"Brand Manager": ["Grand Total"], "total": [n_pivot_mgr["total"].sum()]})
+                n_pivot_mgr_display = pd.concat([n_pivot_mgr, summary_mgr], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(n_pivot_mgr_display), use_container_width=True)
+                st.download_button("📥 Download Manager Analysis (CSV)", n_pivot_mgr_display.to_csv(index=False).encode(), "ncemi_manager_analysis.csv")
 
-        with n_tab3:
-            st.subheader("Service Fees Breakdown")
-            sf_df = p_df[p_df["type"] == "Service Fee"].copy()
-            for col in ["other transaction fees", "other", "total"]:
-                sf_df[col] = pd.to_numeric(sf_df[col].astype(str).str.replace(",",""), errors="coerce")
-            
-            summary_sf = sf_df[["other transaction fees", "other", "total"]].sum()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Transaction Fees", format_currency(summary_sf["other transaction fees"]))
-            c2.metric("Other Fees", format_currency(summary_sf["other"]))
-            c3.metric("Total Service Fees", format_currency(summary_sf["total"]))
-            
-            st.dataframe(sf_df, use_container_width=True)
-            st.download_button("📥 Download Service Fees", sf_df.to_csv(index=False).encode(), "ncemi_service_fees.csv")
+            with n_tab3:
+                st.subheader("Service Fees Breakdown")
+                sf_df = p_df[p_df["type"] == "Service Fee"].copy()
+                
+                summary_sf = sf_df[["other transaction fees", "other", "total"]].sum()
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Transaction Fees", format_currency(summary_sf["other transaction fees"]))
+                c2.metric("Other Fees", format_currency(summary_sf["other"]))
+                c3.metric("Total Service Fees", format_currency(summary_sf["total"]))
+                
+                st.dataframe(make_arrow_safe(sf_df), use_container_width=True)
+                st.download_button("📥 Download Service Fees (CSV)", sf_df.to_csv(index=False).encode(), "ncemi_service_fees.csv")
 
-        with n_tab4:
-            st.subheader("Raw Data with Mapping")
-            st.dataframe(n_df, use_container_width=True)
-            st.download_button("📥 Download Raw Data", n_df.to_csv(index=False).encode(), "ncemi_raw_data.csv")
+            with n_tab4:
+                st.subheader("Raw Data with Mapping")
+                st.dataframe(make_arrow_safe(n_df), use_container_width=True)
+                st.download_button("📥 Download Raw Data (CSV)", n_df.to_csv(index=False).encode(), "ncemi_raw_data.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing NCEMI: {e}")
     else:
         st.warning("Please upload NCEMI Payment CSV and PM file.")
+
 
 # ==========================================
 # TAB 6: ADVERTISEMENT
