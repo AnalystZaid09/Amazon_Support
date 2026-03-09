@@ -549,6 +549,42 @@ with st.sidebar.expander("🔪 Victorinox Secondary"):
     victorinox_orders_file = st.file_uploader("Orders TXT/TSV", type=["txt", "tsv", "csv"], key="vic_orders_up",
                                               help="Tab-separated: asin, quantity, item-price")
 
+with st.sidebar.expander("🛒 Inventory & Reimbursements"):
+    st.caption("FBA/Seller Inventory, Reimbursements, Storage & Loss/Damage • Requires PM")
+    current_inv_file = st.file_uploader("Inventory CSV", type=["csv"], key="curr_inv_up",
+                                         help="Amazon inventory CSV export (e.g. 450281020518.csv)")
+    reimb_fba_file = st.file_uploader("Reimbursement (FBA) CSV", type=["csv"], key="reimb_fba_up",
+                                      help="Amazon FBA reimbursement export (e.g. 'Or Reimbursement.csv')")
+    reimb_seller_file = st.file_uploader("Reimbursement (Seller) CSV", type=["csv"], key="reimb_seller_up",
+                                         help="Monthly Unified Transaction export (skip 11 rows)")
+    amazon_storage_file = st.file_uploader("Storage Fees CSV", type=["csv"], key="storage_up",
+                                            help="Amazon FBA storage fees export")
+    loss_damage_fba_file = st.file_uploader("Loss/Damage (FBA) CSV", type=["csv"], key="loss_fba_up",
+                                            help="Amazon FBA returns export (e.g. 450296020518.csv)")
+    loss_damage_seller_file = st.file_uploader("Loss/Damage (Seller) Excel", type=["xlsx", "xls"], key="loss_seller_up",
+                                               help="Seller Flex Damage Excel (Amazon sheet)")
+
+with st.sidebar.expander("📦 Reverse Logistics"):
+    st.caption("FBA & Seller Reverse Logistics Analysis • Requires PM")
+    rev_fba_txn_file = st.file_uploader("FBA Transaction CSV", type=["csv"], key="rev_fba_txn_up",
+                                        help="Amazon Unified Transaction Report (skips 11 rows)")
+    rev_fba_ret_file = st.file_uploader("FBA Returns CSV", type=["csv"], key="rev_fba_ret_up",
+                                        help="Amazon FBA Returns Report")
+    rev_sel_txn_file = st.file_uploader("Seller Transaction CSV", type=["csv"], key="rev_sel_txn_up",
+                                        help="Amazon Unified Transaction Report (skips 11 rows)")
+    rev_sel_ret_file = st.file_uploader("Seller Returns Reconciliation CSV", type=["csv"], key="rev_sel_ret_up",
+                                        help="QWTT Returns Reconciliation Report")
+    rev_sel_ws_file = st.file_uploader("Working Sheet 2 Excel", type=["xlsx", "xls"], key="rev_sel_ws_up",
+                                       help="Excel with 'Bluk Return Upload Snaphire' sheet")
+
+with st.sidebar.expander("📊 Sales Analysis"):
+    st.caption("Net Sale & PnL Analysis • Requires PM")
+    net_sale_txn_file = st.file_uploader("Net Sale Transaction CSV", type=["csv"], key="net_sale_up",
+                                         help="Amazon Unified Transaction Report (skips 11 rows)")
+
+
+
+
 
 # ==========================================
 # DATA LOADING & INITIAL MAPPING
@@ -565,7 +601,10 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv or victorinox_support_file or victorinox_orders_file)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or bergner_orders_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or tramontina_orders_file or bergner_sec_orders_file or tramontina_sec_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv or victorinox_support_file or victorinox_orders_file or current_inv_file or reimb_fba_file or reimb_seller_file or amazon_storage_file or loss_damage_fba_file or loss_damage_seller_file or rev_fba_txn_file or rev_fba_ret_file or rev_sel_txn_file or rev_sel_ret_file or rev_sel_ws_file or net_sale_txn_file)
+
+
+
 
 if not any_files:
     st.info("👋 Welcome! Open a section in the **sidebar** ← and upload your files to get started.")
@@ -582,7 +621,17 @@ if not any_files:
         ("📦 Tramontina", "BAU / Freebie / Coupon", "PM + Orders + BAU"),
         ("🏭 Berg. Sec", "Secondary P&L", "PM + Orders TXT + Support"),
         ("📦 Tramo Sec", "Secondary P&L", "PM + Orders TXT + Support"),
+        ("📦 Inventory", "Current warehouse stock value", "PM + Inventory CSV"),
+        ("💰 Reimb. FBA", "Customer return reimbursements", "PM + Reimb CSV"),
+        ("🛒 Reimb. Seller", "SAFE-T & Seller reimbursements", "PM + Unified CSV"),
+        ("🏭 Storage", "Monthly FBA storage fees", "PM + Storage CSV"),
+        ("📉 Loss/Dmg FBA", "Damaged item cost at FBA", "PM + Returns CSV"),
+        ("🏬 Loss/Dmg Sel", "Seller Flex damage cost", "Seller Damage Excel"),
+        ("📦 Rev Log FBA", "FBA Transaction vs Returns", "PM + Txn + Returns"),
+        ("🏬 Rev Log Sel", "Seller Flex Transaction vs QWTT", "PM + Txn + QWTT + WS"),
+        ("📊 Net Sale", "Deep sales analysis (Excl. Refunds)", "PM + Transaction CSV"),
     ]
+
     cols = st.columns(3)
     for i, (name, desc, files) in enumerate(tool_info):
         with cols[i % 3]:
@@ -595,7 +644,10 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary", "🔪 Victorinox Secondary"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🏭 Bergner", "🧮 Dyson", "📦 Tramontina", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary", "🔪 Victorinox Secondary", "📦 Current Inventory", "💰 Reimbursement FBA", "🛒 Reimbursement Seller", "🏭 Amazon Storage", "📉 Loss/Damage FBA", "🏬 Loss/Damage Seller", "📦 Reverse Logistic FBA", "🏬 Reverse Logistic Seller", "📊 Net Sale Analyzer"])
+
+
+
 
 combined_results = []
 
@@ -669,7 +721,7 @@ with tabs[1]:
             st.download_button("📥 Download Pivot Table", convert_to_excel(c_pivot_display, 'Pivot Table'), "coupon_pivot_table.xlsx")
             
             st.bar_chart(c_pivot.set_index("Brand")["Coupon Discount"])
-            combined_results.append(c_pivot)
+            combined_results.append(c_pivot.rename(columns={"Coupon Discount": "Coupon Support"}))
     else:
         st.warning("Please upload both Order TXT and PM file for Coupon analysis.")
 
@@ -753,7 +805,7 @@ with tabs[2]:
         # For Combined Summary
         e_pivot_final = e_df.groupby("brand_norm")["seller funding"].sum().reset_index()
         e_pivot_final.columns = ["Brand", "Exchange Funding"]
-        combined_results.append(e_pivot_final)
+        combined_results.append(e_pivot_final.rename(columns={"Exchange Funding": "Exchange Support"}))
     else:
         st.warning("Please upload Exchange Excel file.")
 
@@ -830,7 +882,7 @@ with tabs[3]:
             col_b.write("**Base Amount (excl. GST)**")
             col_b.bar_chart(f_pivot.set_index("Brand")["Base Amount"])
             
-            combined_results.append(f_pivot[["Brand", "Freebies Discount"]])
+            combined_results.append(f_pivot[["Brand", "Freebies Discount"]].rename(columns={"Freebies Discount": "Freebies Support"}))
     else:
         st.warning("Please upload both Order TXT and PM file for Freebies analysis.")
 
@@ -931,7 +983,7 @@ with tabs[4]:
                 # Looking at support_ncemi.py line 161: grand_total = pivot["total"].sum()
                 # Line 249: Download CSV. 
                 # I'll keep it as is.
-                combined_results.append(n_pivot_brand.rename(columns={"total": "NCEMI Funding"}))
+                combined_results.append(n_pivot_brand.rename(columns={"total": "NCEMI Support"}))
 
             with n_tab2:
                 st.subheader("Brand Manager-wise Summary")
@@ -1054,7 +1106,7 @@ with tabs[5]:
                     st.download_button("📥 Download Pivot Table", convert_to_excel(a_pivot_disp, 'Ads Pivot'), "ads_pivot_table.xlsx")
                     
                     st.bar_chart(a_pivot.set_index("Brand")["Total Amount (incl. GST)"])
-                    combined_results.append(a_pivot[["Brand", "Total Amount (excl. GST)"]].rename(columns={"Total Amount (excl. GST)": "Ad Expense"}))
+                    combined_results.append(a_pivot[["Brand", "Total Amount (incl. GST)"]].rename(columns={"Total Amount (incl. GST)": "Advertising support"}))
                 else:
                     st.warning("Please upload Portfolio Report to generate pivot table.")
         else:
@@ -1138,7 +1190,7 @@ with tabs[6]:
             )
             st.download_button("📥 Download Brand Summary", convert_to_excel(rl_pivot_disp, 'RL Brand Pivot'), "rl_brand_summary.xlsx")
             
-            combined_results.append(rl_pivot[["Brand", "total"]].rename(columns={"total": "Replacement Logistic"}))
+            combined_results.append(rl_pivot[["Brand", "total"]].rename(columns={"total": "Replacement charges"}))
 
         with rl_tab2:
             st.subheader("Brand Manager-wise Replacement Logistic Summary")
@@ -2642,47 +2694,780 @@ with tabs[16]:
 
         except Exception as e:
             st.error(f"❌ Error initializing Victorinox Secondary data: {str(e)}")
+# ==========================================
+# TAB 18: CURRENT INVENTORY
+# ==========================================
+with tabs[17]:
+    st.header("📦 Current Inventory Analysis")
+    if current_inv_file and pm_file:
+        try:
+            # Load Data
+            inv_df = pd.read_csv(current_inv_file)
+            inv_df.columns = inv_df.columns.str.lower()
+            
+            pm_full = pm_df.copy()
+            pm_full.columns = pm_full.columns.str.lower()
+            
+            # PM lookup — col 0=asin, col 4=brand manager, col 6=brand, col 9=cp
+            # unified_support_app uses columns[2] for SKU, but current_inv needs ASIN (col 0)
+            pm_lookup = pm_full.iloc[:, [0, 4, 6, 9]].copy()
+            pm_lookup.columns = ["asin", "brand manager", "brand", "cp"]
+            pm_lookup = pm_lookup.drop_duplicates(subset="asin")
+            
+            inv_proc = inv_df.merge(pm_lookup, on="asin", how="left")
+            inv_proc["cp"] = pd.to_numeric(inv_proc["cp"], errors="coerce")
+            inv_proc["afn-warehouse-quantity"] = pd.to_numeric(inv_proc["afn-warehouse-quantity"], errors="coerce")
+            inv_proc["CP As Per Qty"] = inv_proc["cp"] * inv_proc["afn-warehouse-quantity"]
+            
+            # Filter out zero stock
+            inv_proc = inv_proc[inv_proc["afn-warehouse-quantity"] != 0].copy()
+            
+            st.success(f"✅ Processed {len(inv_proc)} inventory records with non-zero stock.")
+            
+            # KPI Container
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total CP Value", format_currency(inv_proc["CP As Per Qty"].sum()))
+            c2.metric("Total Warehouse Units", f"{inv_proc['afn-warehouse-quantity'].sum():,.0f}")
+            c3.metric("Unique SKUs", inv_proc["sku"].nunique())
+            c4.metric("Brands", inv_proc["brand"].nunique())
+            
+            i_tab1, i_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with i_tab1:
+                st.subheader("Brand-wise Inventory Value")
+                i_pivot = inv_proc.groupby("brand")["CP As Per Qty"].sum().reset_index()
+                i_pivot.columns = ["Brand", "CP Inventory Value"]
+                
+                i_summary = pd.DataFrame({"Brand": ["Grand Total"], "CP Inventory Value": [i_pivot["CP Inventory Value"].sum()]})
+                i_pivot_disp = pd.concat([i_pivot, i_summary], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(i_pivot_disp), use_container_width=True)
+                st.download_button("📥 Download Inventory Pivot", i_pivot_disp.to_csv(index=False).encode(), "inventory_brand_pivot.csv")
+                
+                # Combine result
+                combined_results.append(i_pivot.rename(columns={"CP Inventory Value": "Current Inventory"}))
+                
+            with i_tab2:
+                st.subheader("Full Inventory Detail")
+                st.dataframe(make_arrow_safe(inv_proc), use_container_width=True)
+                st.download_button("📥 Download Full Inventory", inv_proc.to_csv(index=False).encode(), "inventory_full_report.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Current Inventory: {e}")
     else:
-        st.warning("Please upload Victorinox Support Excel, Orders TXT, and PM file.")
+        st.warning("Please upload Inventory CSV and PM file.")
+
+# ==========================================
+# TAB 19: REIMBURSEMENT FBA
+# ==========================================
+with tabs[18]:
+    st.header("💰 Reimbursement - FBA Analysis")
+    if reimb_fba_file and pm_file:
+        try:
+            r_fba = pd.read_csv(reimb_fba_file)
+            r_fba = r_fba[r_fba["reason"].isin(["CustomerReturn", "CustomerServiceIssue"])].copy()
+            r_fba.columns = r_fba.columns.str.lower()
+            
+            pm_full = pm_df.copy()
+            pm_full.columns = pm_full.columns.str.lower()
+            
+            # PM lookup — col 0=asin, col 4=brand manager, col 6=brand, col 7=product name
+            r_pm_lookup = pm_full.iloc[:, [0, 4, 6, 7]].copy()
+            r_pm_lookup.columns = ["asin", "brand manager", "brand", "product name"]
+            r_pm_lookup = r_pm_lookup.drop_duplicates(subset="asin")
+            
+            r_fba = r_fba.merge(r_pm_lookup, on="asin", how="left")
+            r_fba["amount-total"] = pd.to_numeric(r_fba["amount-total"], errors="coerce")
+            
+            st.success(f"✅ Processed {len(r_fba)} FBA Reimbursement records.")
+            
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Total Reimbursement", format_currency(r_fba["amount-total"].sum()))
+            k2.metric("Unique Orders", r_fba["amazon-order-id"].nunique())
+            k3.metric("Brands", r_fba["brand"].nunique())
+            k4.metric("Total Units", f"{r_fba['quantity-reimbursed-total'].sum():,.0f}" if 'quantity-reimbursed-total' in r_fba.columns else "N/A")
+            
+            rf_tab1, rf_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with rf_tab1:
+                st.subheader("Brand-wise FBA Reimbursement")
+                rf_piv = r_fba.groupby("brand")["amount-total"].sum().reset_index()
+                rf_piv.columns = ["Brand", "FBA Reimbursement"]
+                
+                rf_sum = pd.DataFrame({"Brand": ["Grand Total"], "FBA Reimbursement": [rf_piv["FBA Reimbursement"].sum()]})
+                rf_piv_disp = pd.concat([rf_piv, rf_sum], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(rf_piv_disp), use_container_width=True)
+                st.download_button("📥 Download FBA Reimb Pivot", rf_piv_disp.to_csv(index=False).encode(), "reimbursement_fba_pivot.csv")
+                
+                combined_results.append(rf_piv.rename(columns={"FBA Reimbursement": "Reimbursement FBA"}))
+                
+            with rf_tab2:
+                st.subheader("Full FBA Reimbursement Detail")
+                st.dataframe(make_arrow_safe(r_fba), use_container_width=True)
+                st.download_button("📥 Download Full FBA Reimb", r_fba.to_csv(index=False).encode(), "reimbursement_fba_full.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Reimbursement FBA: {e}")
+    else:
+        st.warning("Please upload Reimbursement (FBA) CSV and PM file.")
+
+# ==========================================
+# TAB 20: REIMBURSEMENT SELLER
+# ==========================================
+with tabs[19]:
+    st.header("🛒 Reimbursement - Seller Analysis")
+    if reimb_seller_file and pm_file:
+        try:
+            r_sel = pd.read_csv(reimb_seller_file, skiprows=11)
+            r_sel = r_sel[r_sel["type"].isin(["SAFE-T Reimbursement", "Reimbursements"])].copy()
+            
+            pm_full = pm_df.copy()
+            
+            # Map Sku -> ASIN via Amazon Sku Name (col 2)
+            # Unified app col indices: 0-ASIN, 2-Sku Name
+            sku_to_asin = dict(zip(pm_full.iloc[:, 2].astype(str).str.strip(), pm_full.iloc[:, 0].astype(str).str.strip()))
+            r_sel["ASIN"] = r_sel["Sku"].astype(str).str.strip().map(sku_to_asin)
+            
+            r_sel.columns = r_sel.columns.str.lower()
+            pm_full.columns = pm_full.columns.str.lower()
+            
+            # PM lookup — col 0=asin, col 4=brand manager, col 6=brand, col 7=product name
+            rs_pm_lookup = pm_full.iloc[:, [0, 4, 6, 7]].copy()
+            rs_pm_lookup.columns = ["asin", "brand manager", "brand", "product name"]
+            rs_pm_lookup = rs_pm_lookup.drop_duplicates(subset="asin")
+            
+            r_sel = r_sel.merge(rs_pm_lookup, on="asin", how="left")
+            r_sel["total"] = pd.to_numeric(r_sel["total"], errors="coerce")
+            
+            st.success(f"✅ Processed {len(r_sel)} Seller Reimbursement records.")
+            
+            ks1, ks2, ks3, ks4 = st.columns(4)
+            ks1.metric("Total Reimbursement", format_currency(r_sel["total"].sum()))
+            ks2.metric("Unique Orders", r_sel["order id"].nunique() if 'order id' in r_sel.columns else "N/A")
+            ks3.metric("Brands", r_sel["brand"].nunique())
+            ks4.metric("Total Records", len(r_sel))
+            
+            rs_tab1, rs_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with rs_tab1:
+                st.subheader("Brand-wise Seller Reimbursement")
+                rs_piv = r_sel.groupby("brand")["total"].sum().reset_index()
+                rs_piv.columns = ["Brand", "Seller Reimbursement"]
+                
+                rs_sum = pd.DataFrame({"Brand": ["Grand Total"], "Seller Reimbursement": [rs_piv["Seller Reimbursement"].sum()]})
+                rs_piv_disp = pd.concat([rs_piv, rs_sum], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(rs_piv_disp), use_container_width=True)
+                st.download_button("📥 Download Seller Reimb Pivot", rs_piv_disp.to_csv(index=False).encode(), "reimbursement_seller_pivot.csv")
+                
+                combined_results.append(rs_piv.rename(columns={"Seller Reimbursement": "Reimbursement Seller Flex (Safe T Claim)"}))
+                
+            with rs_tab2:
+                st.subheader("Full Seller Reimbursement Detail")
+                st.dataframe(make_arrow_safe(r_sel), use_container_width=True)
+                st.download_button("📥 Download Full Seller Reimb", r_sel.to_csv(index=False).encode(), "reimbursement_seller_full.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Reimbursement Seller: {e}")
+    else:
+        st.warning("Please upload Reimbursement (Seller) CSV and PM file.")
+
+# ==========================================
+# TAB 21: AMAZON STORAGE
+# ==========================================
+with tabs[20]:
+    st.header("🏭 Amazon Storage Analysis")
+    if amazon_storage_file and pm_file:
+        try:
+            stor_df = pd.read_csv(amazon_storage_file)
+            stor_df.columns = stor_df.columns.str.lower()
+            
+            pm_full = pm_df.copy()
+            pm_full.columns = pm_full.columns.str.lower()
+            
+            # PM lookup — col 0=asin, col 4=brand manager, col 6=brand, col 7=product name
+            s_pm_lookup = pm_full.iloc[:, [0, 4, 6, 7]].copy()
+            s_pm_lookup.columns = ["asin", "brand manager", "brand", "product name"]
+            s_pm_lookup = s_pm_lookup.drop_duplicates(subset="asin")
+            
+            stor_proc = stor_df.merge(s_pm_lookup, on="asin", how="left")
+            stor_proc["estimated-monthly-storage-fee"] = pd.to_numeric(stor_proc["estimated-monthly-storage-fee"], errors="coerce")
+            
+            st.success(f"✅ Processed {len(stor_proc)} storage fee records.")
+            
+            s1, s2, s3, s4 = st.columns(4)
+            s1.metric("Total Storage Fee", format_currency(stor_proc["estimated-monthly-storage-fee"].sum()))
+            s2.metric("Unique ASINs", stor_proc["asin"].nunique())
+            s3.metric("Brands", stor_proc["brand"].nunique())
+            s4.metric("Avg Fee/ASIN", format_currency(stor_proc["estimated-monthly-storage-fee"].mean()))
+            
+            st_tab1, st_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with st_tab1:
+                st.subheader("Brand-wise Storage Fees")
+                st_piv = stor_proc.groupby("brand")["estimated-monthly-storage-fee"].sum().reset_index()
+                st_piv.columns = ["Brand", "Storage Fee"]
+                
+                st_sum = pd.DataFrame({"Brand": ["Grand Total"], "Storage Fee": [st_piv["Storage Fee"].sum()]})
+                st_piv_disp = pd.concat([st_piv, st_sum], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(st_piv_disp), use_container_width=True)
+                st.download_button("📥 Download Storage Pivot", st_piv_disp.to_csv(index=False).encode(), "storage_brand_pivot.csv")
+                
+                combined_results.append(st_piv.rename(columns={"Storage Fee": "Storage Charges"}))
+                
+            with st_tab2:
+                st.subheader("Full Storage Detail")
+                st.dataframe(make_arrow_safe(stor_proc), use_container_width=True)
+                st.download_button("📥 Download Full Storage", stor_proc.to_csv(index=False).encode(), "storage_full_report.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Amazon Storage: {e}")
+    else:
+        st.warning("Please upload Storage Fees CSV and PM file.")
+
+# ==========================================
+# TAB 22: LOSS/DAMAGE FBA
+# ==========================================
+with tabs[21]:
+    st.header("📉 Loss/Damage - FBA Analysis")
+    if loss_damage_fba_file and pm_file:
+        try:
+            l_fba = pd.read_csv(loss_damage_fba_file)
+            l_fba.columns = l_fba.columns.str.lower()
+            
+            # Filter non-sellable
+            if "detailed-disposition" in l_fba.columns:
+                l_fba = l_fba[l_fba["detailed-disposition"].str.upper() != "SELLABLE"].copy()
+            
+            pm_full = pm_df.copy()
+            pm_full.columns = pm_full.columns.str.lower()
+            
+            # PM lookup — col 0=asin, col 4=brand manager, col 6=brand, col 9=cp
+            lf_pm_lookup = pm_full.iloc[:, [0, 4, 6, 9]].copy()
+            lf_pm_lookup.columns = ["asin", "brand manager", "brand", "cp"]
+            lf_pm_lookup = lf_pm_lookup.drop_duplicates(subset="asin")
+            
+            l_fba = l_fba.merge(lf_pm_lookup, on="asin", how="left")
+            l_fba["cp"] = pd.to_numeric(l_fba["cp"], errors="coerce")
+            l_fba["CP as per QTY"] = l_fba["cp"] * l_fba["quantity"]
+            
+            st.success(f"✅ Processed {len(l_fba)} non-sellable FBA return records.")
+            
+            fl1, fl2, fl3, fl4 = st.columns(4)
+            fl1.metric("Total CP Loss", format_currency(l_fba["CP as per QTY"].sum()))
+            fl2.metric("Total Units", f"{l_fba['quantity'].sum():,.0f}")
+            fl3.metric("Unique Orders", l_fba["order-id"].nunique())
+            fl4.metric("Brands", l_fba["brand"].nunique())
+            
+            lf_tab1, lf_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with lf_tab1:
+                st.subheader("Brand-wise FBA Loss")
+                lf_piv = l_fba.groupby("brand")["CP as per QTY"].sum().reset_index()
+                lf_piv.columns = ["Brand", "FBA Loss"]
+                
+                lf_sum = pd.DataFrame({"Brand": ["Grand Total"], "FBA Loss": [lf_piv["FBA Loss"].sum()]})
+                lf_piv_disp = pd.concat([lf_piv, lf_sum], ignore_index=True)
+                
+                st.dataframe(make_arrow_safe(lf_piv_disp), use_container_width=True)
+                st.download_button("📥 Download FBA Loss Pivot", lf_piv_disp.to_csv(index=False).encode(), "loss_fba_pivot.csv")
+                
+                combined_results.append(lf_piv.rename(columns={"FBA Loss": "Loss in damages FBA"}))
+                
+            with lf_tab2:
+                st.subheader("Full FBA Loss Detail")
+                st.dataframe(make_arrow_safe(l_fba), use_container_width=True)
+                st.download_button("📥 Download Full FBA Loss", l_fba.to_csv(index=False).encode(), "loss_fba_full.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Loss/Damage FBA: {e}")
+    else:
+        st.warning("Please upload FBA Returns CSV and PM file.")
+
+# ==========================================
+# TAB 23: LOSS/DAMAGE SELLER
+# ==========================================
+with tabs[22]:
+    st.header("🏬 Loss/Damage - Seller Flex Analysis")
+    if loss_damage_seller_file:
+        try:
+            xl = pd.ExcelFile(loss_damage_seller_file)
+            sheet_names = xl.sheet_names
+            default_sheet = "Amazon" if "Amazon" in sheet_names else sheet_names[0]
+            sel_sheet = st.selectbox("Select Sheet", sheet_names, index=sheet_names.index(default_sheet), key="loss_sel_sheet")
+            
+            l_sel = pd.read_excel(loss_damage_seller_file, sheet_name=sel_sheet)
+            l_sel["AS Per Qty"] = pd.to_numeric(l_sel["AS Per Qty"], errors="coerce")
+            
+            st.success(f"✅ Loaded sheet '{sel_sheet}' with {len(l_sel)} records.")
+            
+            sl1, sl2, sl3, sl4 = st.columns(4)
+            sl1.metric("Total Loss", format_currency(l_sel["AS Per Qty"].sum()))
+            sl2.metric("Total Units", f"{l_sel['Qty'].sum():,.0f}" if 'Qty' in l_sel.columns else "N/A")
+            sl3.metric("Unique Orders", l_sel["Order ID"].nunique() if 'Order ID' in l_sel.columns else "N/A")
+            sl4.metric("Brands", l_sel["Brand"].nunique() if 'Brand' in l_sel.columns else "N/A")
+            
+            ls_tab1, ls_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+            
+            with ls_tab1:
+                st.subheader("Brand-wise Seller Loss")
+                if "Brand" in l_sel.columns:
+                    ls_piv = l_sel.groupby("Brand")["AS Per Qty"].sum().reset_index()
+                    ls_piv.columns = ["Brand", "Seller Loss"]
+                    
+                    ls_sum = pd.DataFrame({"Brand": ["Grand Total"], "Seller Loss": [ls_piv["Seller Loss"].sum()]})
+                    ls_piv_disp = pd.concat([ls_piv, ls_sum], ignore_index=True)
+                    
+                    st.dataframe(make_arrow_safe(ls_piv_disp), use_container_width=True)
+                    st.download_button("📥 Download Seller Loss Pivot", ls_piv_disp.to_csv(index=False).encode(), "loss_seller_pivot.csv")
+                    
+                    combined_results.append(ls_piv.rename(columns={"Seller Loss": "Loss in damages Seller Flex"}))
+                else:
+                    st.warning("Column 'Brand' not found in selected sheet.")
+                
+            with ls_tab2:
+                st.subheader("Full Seller Loss Detail")
+                st.dataframe(make_arrow_safe(l_sel), use_container_width=True)
+                st.download_button("📥 Download Full Seller Loss", l_sel.to_csv(index=False).encode(), "loss_seller_full.csv")
+                
+        except Exception as e:
+            st.error(f"❌ Error processing Loss/Damage Seller: {e}")
+    else:
+        st.warning("Please upload Seller Flex Damage Excel.")
+
+
+
+# ==========================================
+# TAB 24: REVERSE LOGISTIC FBA
+# ==========================================
+with tabs[23]:
+    st.header("📦 Reverse Logistic - FBA Analysis")
+    if rev_fba_txn_file and rev_fba_ret_file and pm_file:
+        try:
+            with st.spinner("Processing FBA Reverse Logistics..."):
+                # 1. Load Transaction CSV (skip 11 rows)
+                txn_fba = pd.read_csv(rev_fba_txn_file, skiprows=11, thousands=",", low_memory=False)
+                
+                # 2. Orders Pivot
+                orders_fba = txn_fba[(txn_fba["type"] == "Order") & (txn_fba["product sales"] != 0)].copy()
+                orders_fba["order id"] = orders_fba["order id"].astype(str)
+                orders_fba["Sku"] = orders_fba["Sku"].astype(str)
+                orders_fba["Con"] = orders_fba["order id"] + orders_fba["Sku"]
+                
+                piv_orders = orders_fba.groupby("Con")["total"].sum().reset_index().rename(columns={"total": "Order Payment"})
+                
+                # 3. Refunds Pivot
+                refunds_fba = txn_fba[(txn_fba["type"] == "Refund") & (txn_fba["product sales"] != 0)].copy()
+                refunds_fba["order id"] = refunds_fba["order id"].astype(str)
+                refunds_fba["Sku"] = refunds_fba["Sku"].astype(str)
+                refunds_fba["Con"] = refunds_fba["order id"] + refunds_fba["Sku"]
+                
+                piv_refunds = refunds_fba.groupby("Con")["total"].sum().reset_index().rename(columns={"total": "Refund Payment"})
+                
+                # 4. Returns Report
+                ret_fba = pd.read_csv(rev_fba_ret_file, low_memory=False)
+                ret_fba["order-id"] = ret_fba["order-id"].astype(str)
+                ret_fba["sku"] = ret_fba["sku"].astype(str)
+                ret_fba["Con"] = ret_fba["order-id"] + ret_fba["sku"]
+                
+                # Merge payments
+                ret_fba = ret_fba.merge(piv_orders, on="Con", how="left")
+                ret_fba = ret_fba.merge(piv_refunds, on="Con", how="left")
+                
+                # Logic from standalone script
+                ret_fba.loc[ret_fba["Order Payment"].isna(), ["Order Payment", "Refund Payment"]] = 0
+                ret_fba.loc[ret_fba["Refund Payment"].isna(), ["Refund Payment", "Order Payment"]] = 0
+                
+                ret_fba["Order Payment"] = pd.to_numeric(ret_fba["Order Payment"], errors="coerce").fillna(0)
+                ret_fba["Refund Payment"] = pd.to_numeric(ret_fba["Refund Payment"], errors="coerce").fillna(0)
+                ret_fba["Reverse Logistic Charges"] = ret_fba["Order Payment"] + ret_fba["Refund Payment"]
+                
+                # Scale positive charges by 25%
+                mask = ret_fba["Reverse Logistic Charges"] > 0
+                ret_fba.loc[mask, "Reverse Logistic Charges"] *= 0.25
+                
+                # PM lookup for Brand
+                pm_local = pm_df.copy()
+                pm_local.columns = pm_local.columns.str.lower()
+                pm_lookup = pm_local.iloc[:, [0, 4, 6]].copy() # asin, brand manager, brand
+                pm_lookup.columns = ["asin", "brand manager", "brand"]
+                pm_lookup = pm_lookup.drop_duplicates(subset="asin")
+                
+                ret_fba = ret_fba.merge(pm_lookup, on="asin", how="left")
+                
+                st.success(f"✅ Processed {len(ret_fba)} FBA return records.")
+                
+                # KPIs
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total RLC", format_currency(ret_fba["Reverse Logistic Charges"].sum()))
+                c2.metric("Total Order Payment", format_currency(ret_fba["Order Payment"].sum()))
+                c3.metric("Total Refund Payment", format_currency(ret_fba["Refund Payment"].sum()))
+                c4.metric("Brands Affected", ret_fba["brand"].nunique())
+                
+                rf_tab1, rf_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+                
+                with rf_tab1:
+                    st.subheader("Brand-wise Reverse Logistic Charges")
+                    rf_piv = ret_fba.groupby("brand")["Reverse Logistic Charges"].sum().reset_index()
+                    rf_piv.columns = ["Brand", "Reverse logistics FBA"]
+                    
+                    rf_sum = pd.DataFrame({"Brand": ["Grand Total"], "Reverse logistics FBA": [rf_piv["Reverse logistics FBA"].sum()]})
+                    rf_piv_disp = pd.concat([rf_piv, rf_sum], ignore_index=True)
+                    
+                    st.dataframe(make_arrow_safe(rf_piv_disp), use_container_width=True)
+                    st.download_button("📥 Download RLC Pivot", rf_piv_disp.to_csv(index=False).encode(), "rlc_fba_pivot.csv")
+                    
+                    combined_results.append(rf_piv)
+                    
+                with rf_tab2:
+                    st.subheader("Full Reverse Logistic Detail")
+                    st.dataframe(make_arrow_safe(ret_fba), use_container_width=True)
+                    st.download_button("📥 Download Full RLC", ret_fba.to_csv(index=False).encode(), "rlc_fba_full.csv")
+                    
+        except Exception as e:
+            st.error(f"❌ Error processing Reverse Logistic FBA: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.warning("Please upload FBA Transaction CSV, FBA Returns CSV, and PM file.")
+
+# ==========================================
+# TAB 25: REVERSE LOGISTIC SELLER
+# ==========================================
+with tabs[24]:
+    st.header("🏬 Reverse Logistic - Seller Flex Analysis")
+    if rev_sel_txn_file and rev_sel_ret_file and pm_file and rev_sel_ws_file:
+        try:
+            with st.spinner("Processing Seller Reverse Logistics..."):
+                # 1. Load Transaction CSV (skip 11)
+                txn_sel = pd.read_csv(rev_sel_txn_file, skiprows=11, thousands=",", low_memory=False)
+                
+                # 2. Orders Pivot
+                orders_sel = txn_sel[(txn_sel["type"] == "Order") & (txn_sel["product sales"] != 0)].copy()
+                orders_sel["order id"] = orders_sel["order id"].astype(str)
+                orders_sel["Sku"] = orders_sel["Sku"].astype(str)
+                orders_sel["Con"] = orders_sel["order id"] + orders_sel["Sku"]
+                piv_orders_s = orders_sel.groupby("Con")["total"].sum().reset_index().rename(columns={"total": "Order Payment"})
+                
+                # 3. Refunds Pivot
+                refunds_sel = txn_sel[(txn_sel["type"] == "Refund") & (txn_sel["product sales"] != 0)].copy()
+                refunds_sel["order id"] = refunds_sel["order id"].astype(str)
+                refunds_sel["Sku"] = refunds_sel["Sku"].astype(str)
+                refunds_sel["Con"] = refunds_sel["order id"] + refunds_sel["Sku"]
+                piv_refunds_s = refunds_sel.groupby("Con")["total"].sum().reset_index().rename(columns={"total": "Refund Payment"})
+                
+                # 4. Returns Reconciliation
+                ret_sel = pd.read_csv(rev_sel_ret_file, low_memory=False)
+                ret_sel = ret_sel[["Customer Order ID", "Shipment ID", "mSKU", "Units", "ASIN"]].copy()
+                ret_sel = ret_sel.drop_duplicates(subset=["Customer Order ID", "Shipment ID", "mSKU", "Units"]).reset_index(drop=True)
+                ret_sel = ret_sel.rename(columns={"mSKU": "Sku", "Customer Order ID": "order-id", "ASIN": "asin"})
+                ret_sel["order-id"] = ret_sel["order-id"].astype(str)
+                ret_sel["Sku"] = ret_sel["Sku"].astype(str)
+                ret_sel["Con"] = ret_sel["order-id"] + ret_sel["Sku"]
+                
+                # 6. Working Sheet - Return Type
+                ws = pd.read_excel(rev_sel_ws_file, sheet_name="Bluk Return Upload Snaphire")
+                ws_lookup = ws.iloc[:, [0, 6]].copy()
+                ws_lookup.columns = ["order-id", "Return Type"]
+                ws_lookup["order-id"] = ws_lookup["order-id"].astype(str)
+                ws_lookup = ws_lookup.drop_duplicates(subset="order-id")
+                
+                ret_sel = ret_sel.merge(ws_lookup, on="order-id", how="left")
+                
+                # Merge payments
+                ret_sel = ret_sel.merge(piv_orders_s, on="Con", how="left")
+                ret_sel = ret_sel.merge(piv_refunds_s, on="Con", how="left")
+                
+                # Logic
+                ret_sel.loc[ret_sel["Order Payment"].isna(), ["Order Payment", "Refund Payment"]] = 0
+                ret_sel.loc[ret_sel["Refund Payment"].isna(), ["Refund Payment", "Order Payment"]] = 0
+                
+                ret_sel["Order Payment"] = pd.to_numeric(ret_sel["Order Payment"], errors="coerce").fillna(0)
+                ret_sel["Refund Payment"] = pd.to_numeric(ret_sel["Refund Payment"], errors="coerce").fillna(0)
+                ret_sel["Reverse Logistic Charges"] = ret_sel["Order Payment"] + ret_sel["Refund Payment"]
+                
+                # Scale positive charges by 25%
+                mask_s = ret_sel["Reverse Logistic Charges"] > 0
+                ret_sel.loc[mask_s, "Reverse Logistic Charges"] *= 0.25
+                
+                # PM lookup
+                pm_local_s = pm_df.copy()
+                pm_local_s.columns = pm_local_s.columns.str.lower()
+                pm_lookup_s = pm_local_s.iloc[:, [0, 4, 6]].copy()
+                pm_lookup_s.columns = ["asin", "brand manager", "brand"]
+                pm_lookup_s = pm_lookup_s.drop_duplicates(subset="asin")
+                
+                ret_sel = ret_sel.merge(pm_lookup_s, on="asin", how="left")
+                
+                st.success(f"✅ Processed {len(ret_sel)} Seller Flex return records.")
+                
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("Total RLC", format_currency(ret_sel["Reverse Logistic Charges"].sum()))
+                sc2.metric("Total Order Payment", format_currency(ret_sel["Order Payment"].sum()))
+                sc3.metric("Total Refund Payment", format_currency(ret_sel["Refund Payment"].sum()))
+                sc4.metric("Brands Affected", ret_sel["brand"].nunique())
+                
+                rs_tab1, rs_tab2 = st.tabs(["📊 Brand Pivot", "📋 Full Detail"])
+                
+                with rs_tab1:
+                    st.subheader("Brand-wise Reverse Logistic Charges (Seller)")
+                    rs_piv = ret_sel.groupby("brand")["Reverse Logistic Charges"].sum().reset_index()
+                    rs_piv.columns = ["Brand", "Reverse logistics Seller Flex Reverse"]
+                    
+                    rs_sum = pd.DataFrame({"Brand": ["Grand Total"], "Reverse logistics Seller Flex Reverse": [rs_piv["Reverse logistics Seller Flex Reverse"].sum()]})
+                    rs_piv_disp = pd.concat([rs_piv, rs_sum], ignore_index=True)
+                    
+                    st.dataframe(make_arrow_safe(rs_piv_disp), use_container_width=True)
+                    st.download_button("📥 Download Seller RLC Pivot", rs_piv_disp.to_csv(index=False).encode(), "rlc_seller_pivot.csv")
+                    
+                    combined_results.append(rs_piv)
+                    
+                with rs_tab2:
+                    st.subheader("Full Seller Reverse Logistic Detail")
+                    st.dataframe(make_arrow_safe(ret_sel), use_container_width=True)
+                    st.download_button("📥 Download Full Seller RLC", ret_sel.to_csv(index=False).encode(), "rlc_seller_full.csv")
+                    
+        except Exception as e:
+            st.error(f"❌ Error processing Reverse Logistic Seller: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.warning("Please upload Seller Transaction CSV, QWTT Returns CSV, PM, and Working Sheet 2.")
+
+
+
+# ==========================================
+# TAB 26: NET SALE ANALYZER
+# ==========================================
+with tabs[25]:
+    st.header("📊 Net Sale Analyzer")
+    if net_sale_txn_file and pm_file:
+        try:
+            with st.spinner("Processing Net Sale data..."):
+                # 1. Load Transaction CSV (header=11)
+                df_net = pd.read_csv(net_sale_txn_file, header=11)
+                
+                # Identify refunds first to exclude them
+                refund_order_ids = set(df_net[df_net["type"] == "Refund"]["order id"].tolist())
+                
+                # Keep only Orders and non-zero sales
+                netsale = df_net[df_net["type"] == "Order"].copy()
+                netsale["product sales"] = pd.to_numeric(netsale["product sales"], errors="coerce")
+                netsale = netsale[netsale["product sales"] != 0].copy()
+                
+                # Exclude refunded orders
+                if refund_order_ids:
+                    netsale = netsale[~netsale["order id"].isin(refund_order_ids)].copy()
+                
+                # PM lookup for ASIN mapping
+                pm_local = pm_df.copy()
+                pm_local["Amazon Sku Name"] = pm_local["Amazon Sku Name"].astype(str).str.strip()
+                asin_map = dict(zip(pm_local["Amazon Sku Name"], pm_local["ASIN"]))
+                
+                netsale["Sku"] = netsale["Sku"].astype(str).str.strip()
+                netsale["asin"] = netsale["Sku"].map(asin_map)
+                
+                # Clean columns and total
+                netsale.columns = netsale.columns.str.lower()
+                netsale["product sales"] = pd.to_numeric(netsale["product sales"], errors="coerce").fillna(0)
+                netsale["total sales tax liable(gst before adjusting tcs)"] = pd.to_numeric(
+                    netsale["total sales tax liable(gst before adjusting tcs)"], errors="coerce"
+                ).fillna(0)
+                netsale["total"] = pd.to_numeric(netsale["total"].astype(str).str.replace(",", "", regex=False), errors="coerce").fillna(0)
+                
+                # PM merge for Brand & CP
+                pm_proc = pm_local.copy()
+                pm_proc.columns = pm_proc.columns.str.lower()
+                pm_lookup = pm_proc.iloc[:, [0, 4, 6, 9]].copy()
+                pm_lookup.columns = ["asin", "brand manager", "brand", "cp"]
+                pm_lookup = pm_lookup.drop_duplicates(subset="asin")
+                
+                netsale = netsale.merge(pm_lookup, on="asin", how="left")
+                
+                # Pivot per SKU x Order
+                n_piv = netsale.groupby(["sku", "order id", "asin", "brand"]).agg({
+                    "quantity": "sum",
+                    "product sales": "sum",
+                    "total sales tax liable(gst before adjusting tcs)": "sum",
+                    "total": "sum",
+                    "cp": "first"
+                }).reset_index()
+                
+                # Coerce metrics to numeric before calculations
+                for col in ["quantity", "product sales", "total sales tax liable(gst before adjusting tcs)", "total", "cp"]:
+                    n_piv[col] = pd.to_numeric(n_piv[col], errors="coerce").fillna(0)
+                
+                # Calculations
+                n_piv["Sales Amount (Turn Over)"] = n_piv["product sales"] + n_piv["total sales tax liable(gst before adjusting tcs)"]
+                n_piv["Amazon Total Deducation"] = n_piv["Sales Amount (Turn Over)"] - n_piv["total"]
+                n_piv["CP as per Qty"] = n_piv["cp"] * n_piv["quantity"]
+                n_piv["Profit"] = n_piv["total"] - n_piv["CP as per Qty"]
+                
+                st.success(f"✅ Processed {len(n_piv)} Net Sale records (Refunds Excluded).")
+                
+                # KPIs
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Net Sales Turnover", format_currency(n_piv["Sales Amount (Turn Over)"].sum()))
+                k2.metric("Total Payout", format_currency(n_piv["total"].sum()))
+                k3.metric("Total CP Cost", format_currency(n_piv["CP as per Qty"].sum()))
+                k4.metric("Net Profit", format_currency(n_piv["Profit"].sum()))
+                
+                nt_tab1, nt_tab2 = st.tabs(["📊 Brand Summary", "🔍 Detail Pivot"])
+                
+                with nt_tab1:
+                    st.subheader("Brand-wise Net Sales Summary")
+                    brand_piv = n_piv.groupby("brand").agg({
+                        "quantity": "sum",
+                        "Sales Amount (Turn Over)": "sum",
+                        "total": "sum",
+                        "CP as per Qty": "sum",
+                        "Profit": "sum"
+                    }).reset_index()
+                    brand_piv.columns = ["Brand", "Net Sales Qty", "Net Turnover", "Payout", "CP Cost", "Net Profit"]
+                    
+                    ns_sum = pd.DataFrame({
+                        "Brand": ["TOTAL"],
+                        "Net Sales Qty": [brand_piv["Net Sales Qty"].sum()],
+                        "Net Turnover": [brand_piv["Net Turnover"].sum()],
+                        "Payout": [brand_piv["Payout"].sum()],
+                        "CP Cost": [brand_piv["CP Cost"].sum()],
+                        "Net Profit": [brand_piv["Net Profit"].sum()]
+                    })
+                    brand_disp = pd.concat([brand_piv, ns_sum], ignore_index=True)
+                    
+                    st.dataframe(make_arrow_safe(brand_disp), use_container_width=True)
+                    st.download_button("📥 Download Brand Net Sale", brand_disp.to_csv(index=False).encode(), "net_sale_brand_summary.csv")
+                    
+                    brand_piv["Gross PnL Level 1"] = brand_piv["Payout"] - brand_piv["CP Cost"]
+                    
+                    # Also append to combined summary with standardized names
+                    # Standardizing columns for Combined Summary aggregation
+                    combined_results.append(brand_piv.rename(columns={
+                        "Net Sales Qty": "Net Sales",
+                        "Net Turnover": "Turn Over",
+                        "Payout": "Payout",
+                        "CP Cost": "Cost of goods sold",
+                        "Net Profit": "Net PnL"
+                    }))
+                    
+                with nt_tab2:
+                    st.subheader("Order-level Detail (No Refunds)")
+                    st.dataframe(make_arrow_safe(n_piv), use_container_width=True)
+                    st.download_button("📥 Download Net Sale Detail", n_piv.to_csv(index=False).encode(), "net_sale_pivot_detail.csv")
+                    
+        except Exception as e:
+            st.error(f"❌ Error processing Net Sale Analyzer: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.warning("Please upload Net Sale Transaction CSV and PM file.")
+
 
 # ==========================================
 
 # FINAL COMBINED REPORT POPULATION
+
 # ==========================================
+
 with tabs[0]:
     if combined_results:
-        final_df = combined_results[0]
+        final_df = combined_results[0].copy()
         for next_df in combined_results[1:]:
             final_df = pd.merge(final_df, next_df, on="Brand", how="outer")
         
         final_df["Brand"] = final_df["Brand"].fillna("Unknown/Unmapped")
+        
+        # List of columns to ensure presence and order
+        requested_cols = [
+            "Net Sales", "Turn Over", "Payout", "Cost of goods sold", "Gross PnL Level 1",
+            "Price Support", "Coupon Support", "NCEMI Support", "Freebies Support", 
+            "Exchange support", "Advertising support", "Gross PnL level 2",
+            "Reimbursement FBA", "Reimbursement Seller Flex (Safe T Claim)", "Total Reimbursement",
+            "Reverse logistics FBA", "Reverse logistics Seller Flex Reverse", "Total Reverse",
+            "Replacement charges", "Storage Charges", "Admin @1%", 
+            "Gross PnL level 3", "Interest", "Loss in damages FBA", "Loss in damages Seller Flex", 
+            "Loss in damages Total", "Net PnL", "Current Inventory", "Profit in %"
+        ]
+        
+        # Align naming for Exchange Support (fix case)
+        if "Exchange Support" in final_df.columns:
+            final_df.rename(columns={"Exchange Support": "Exchange support"}, inplace=True)
+
+        for col in requested_cols:
+            if col not in final_df.columns:
+                final_df[col] = 0.0
+        
         final_df = final_df.fillna(0)
         
-        # Calculate Total
-        numeric_cols = [c for c in final_df.columns if c != "Brand"]
-        final_df["Grand Total"] = final_df[numeric_cols].sum(axis=1)
+        # Calculations
+        final_df["Total Reimbursement"] = final_df["Reimbursement FBA"] + final_df["Reimbursement Seller Flex (Safe T Claim)"]
+        final_df["Total Reverse"] = final_df["Reverse logistics FBA"] + final_df["Reverse logistics Seller Flex Reverse"]
         
-        # Sort by total
-        final_df = final_df.sort_values("Grand Total", ascending=False)
+        final_df["Gross PnL level 2"] = (
+            final_df["Gross PnL Level 1"] + 
+            final_df["Price Support"] + 
+            final_df["Coupon Support"] + 
+            final_df["NCEMI Support"] + 
+            final_df["Freebies Support"] + 
+            final_df["Exchange support"] + 
+            final_df["Advertising support"]
+        )
+        
+        final_df["Gross PnL level 3"] = (
+            final_df["Gross PnL level 2"] + 
+            final_df["Total Reimbursement"] - 
+            final_df["Total Reverse"] - 
+            final_df["Replacement charges"] - 
+            final_df["Storage Charges"]
+        )
+        
+        final_df["Loss in damages Total"] = final_df["Loss in damages FBA"] + final_df["Loss in damages Seller Flex"]
+        
+        final_df["Net PnL"] = final_df["Gross PnL level 3"] - final_df["Interest"] - final_df["Loss in damages Total"]
+        
+        # Profit %
+        mask_sales = final_df["Net Sales"] != 0
+        final_df.loc[mask_sales, "Profit in %"] = (final_df.loc[mask_sales, "Net PnL"] / final_df.loc[mask_sales, "Net Sales"]) * 100
+        
+        # Select and Reorder
+        final_df = final_df[["Brand"] + requested_cols]
+        
+        # Sort by Net PnL or Brand? User didn't specify, but Gross PnL Level 2/3 is key.
+        # Let's keep Brand sort or desc PnL.
+        final_df = final_df.sort_values("Net PnL", ascending=False)
         
         # Show Metrics
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Brands", len(final_df[final_df['Brand'] != "Unknown/Unmapped"]))
-        m2.metric("Total Support Cost", format_currency(final_df["Grand Total"].sum()))
-        m3.metric("Max Expense Brand", final_df.iloc[0]["Brand"] if not final_df.empty else "N/A")
-        m4.metric("Avg Support/Brand", format_currency(final_df["Grand Total"].mean()))
+        m2.metric("Total Net PnL", format_currency(final_df["Net PnL"].sum()))
+        m3.metric("Max Profit Brand", final_df.iloc[0]["Brand"] if not final_df.empty else "N/A")
+        m4.metric("Avg Profit/Brand", format_currency(final_df["Net PnL"].mean()))
         
         st.markdown("---")
         
         # Add Summary Row
-        summary_row = final_df[numeric_cols + ["Grand Total"]].sum().to_frame().T
+        summary_cols = requested_cols.copy()
+        if "Profit in %" in summary_cols: summary_cols.remove("Profit in %")
+        
+        summary_row = final_df[summary_cols].sum().to_frame().T
         summary_row["Brand"] = "TOTAL"
+        
+        # Recalculate profit % for total row
+        total_net_pnl = summary_row["Net PnL"].iloc[0]
+        total_net_sales = summary_row["Net Sales"].iloc[0]
+        summary_row["Profit in %"] = (total_net_pnl / total_net_sales * 100) if total_net_sales != 0 else 0
+        
         final_df = pd.concat([final_df, summary_row], ignore_index=True)
         
         # Display with dynamic coloring
+        format_dict = {c: format_currency for c in requested_cols if c != "Profit in %"}
+        format_dict["Profit in %"] = "{:.2f}%"
+        
         st.dataframe(
-            final_df.style.format({c: format_currency for c in numeric_cols + ["Grand Total"]})
-            .background_gradient(subset=["Grand Total"], cmap="YlOrRd"),
+            final_df.style.format(format_dict)
+            .background_gradient(subset=["Net PnL"], cmap="RdYlGn"),
             use_container_width=True,
             height=500
         )
@@ -2695,9 +3480,9 @@ with tabs[0]:
         )
         
         # Visualization
-        st.subheader("📊 Support Cost Distribution by Brand")
+        st.subheader("📊 Net PnL Distribution by Brand")
         chart_data = final_df[final_df["Brand"] != "TOTAL"].copy()
-        st.bar_chart(chart_data.set_index("Brand")["Grand Total"])
+        st.bar_chart(chart_data.set_index("Brand")["Net PnL"])
 
     else:
         st.info("Upload files to see the combined brand-wise summary.")
