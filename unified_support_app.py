@@ -2982,7 +2982,7 @@ with tabs[19]:
             rs_pm_lookup = rs_pm_lookup.drop_duplicates(subset="asin")
             
             r_sel = r_sel.merge(rs_pm_lookup, on="asin", how="left")
-            r_sel["total"] = pd.to_numeric(r_sel["total"], errors="coerce")
+            r_sel["total"] = pd.to_numeric(r_sel["total"].astype(str).str.replace(",", ""), errors="coerce").fillna(0)
             
             st.success(f"✅ Processed {len(r_sel)} Seller Reimbursement records.")
             
