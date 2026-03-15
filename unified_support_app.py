@@ -701,11 +701,11 @@ with st.sidebar.expander("🛒 Inventory & Reimbursements"):
 
 with st.sidebar.expander("📦 Reverse Logistics"):
     st.caption("FBA & Seller Reverse Logistics Analysis • Requires PM")
-    rev_fba_txn_file = st.file_uploader("FBA Transaction CSV", type=["csv"], key="rev_fba_txn_up",
+    rev_fba_txn_file = st.file_uploader("Current Month Payout", type=["csv"], key="rev_fba_txn_up",
                                         help="Amazon Unified Transaction Report (skips 11 rows)")
     rev_fba_ret_file = st.file_uploader("FBA Returns CSV", type=["csv"], key="rev_fba_ret_up",
                                         help="Amazon FBA Returns Report")
-    rev_sel_txn_file = st.file_uploader("Seller Transaction CSV", type=["csv"], key="rev_sel_txn_up",
+    rev_sel_txn_file = st.file_uploader("1 to till Date Payout File", type=["csv"], key="rev_sel_txn_up",
                                         help="Amazon Unified Transaction Report (skips 11 rows)")
     rev_sel_ret_file = st.file_uploader("Seller Returns Reconciliation CSV", type=["csv"], key="rev_sel_ret_up",
                                         help="QWTT Returns Reconciliation Report")
@@ -2952,7 +2952,7 @@ with tabs[21]:
             import traceback
             st.code(traceback.format_exc())
     else:
-        st.warning("Please upload FBA Transaction CSV, FBA Returns CSV, and PM file.")
+        st.warning("Please upload Current Month Payout, FBA Returns CSV, and PM file.")
 
 # ==========================================
 # TAB 25: REVERSE LOGISTIC SELLER
@@ -3055,7 +3055,7 @@ with tabs[22]:
             import traceback
             st.code(traceback.format_exc())
     else:
-        st.warning("Please upload Seller Transaction CSV, QWTT Returns CSV, PM, and Working Sheet 2.")
+        st.warning("Please upload 1 to till Date Payment File, QWTT Returns CSV, PM, and Working Sheet 2.")
 
 
 
