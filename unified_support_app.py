@@ -705,7 +705,7 @@ with st.sidebar.expander("📦 Reverse Logistics"):
                                         help="Amazon Unified Transaction Report (skips 11 rows)")
     rev_fba_ret_file = st.file_uploader("FBA Returns CSV", type=["csv"], key="rev_fba_ret_up",
                                         help="Amazon FBA Returns Report")
-    rev_sel_txn_file = st.file_uploader("1 to till Date Payout File", type=["csv"], key="rev_sel_txn_up",
+    rev_sel_txn_file = st.file_uploader("1 to till Date Payment File", type=["csv"], key="rev_sel_txn_up",
                                         help="Amazon Unified Transaction Report (skips 11 rows)")
     rev_sel_ret_file = st.file_uploader("Seller Returns Reconciliation CSV", type=["csv"], key="rev_sel_ret_up",
                                         help="QWTT Returns Reconciliation Report")
@@ -2078,7 +2078,7 @@ with tabs[13]:
 
     if inalsa_b2b_zips and inalsa_b2c_zips and pm_file and inalsa_unified_csv and inalsa_storage_csv:
         try:
-            with st.spinner("Processing Inalsa Secondary data..."):
+            with st.spinner("Processing files…"):
                 def read_zip_single(uploaded_zip):
                     with zipfile.ZipFile(io.BytesIO(uploaded_zip.read()), "r") as z:
                         file_name = z.namelist()[0]
@@ -2099,12 +2099,13 @@ with tabs[13]:
                 df_b2c = read_zips_list(inalsa_b2c_zips)
                 final_df = pd.concat([df_b2b, df_b2c], ignore_index=True)
 
-                st.caption(f"Loaded {len(inalsa_b2b_zips)} B2B file(s) and {len(inalsa_b2c_zips)} B2C file(s) → {len(final_df):,} rows.")
+                st.caption(f"Loaded {len(inalsa_b2b_zips)} B2B file(s) and {len(inalsa_b2c_zips)} B2C file(s) → {len(final_df):,} total rows before filtering.")
 
-                # 2. Merge Brand from PM
-                inalsa_pm = pm_df.copy()
-                pm_lookup = inalsa_pm[['ASIN', 'Brand']].copy()
-                final_df = final_df.merge(pm_lookup, left_on="Asin", right_on="ASIN", how="left")
+                # 2. Raw PM Loading for exact logic alignment
+                pm_raw = pd.read_excel(pm_file)
+                pm_brand_lookup = pm_raw.iloc[:, [0, 6]].copy()
+                pm_brand_lookup.columns = ["ASIN", "Brand"]
+                final_df = final_df.merge(pm_brand_lookup, left_on="Asin", right_on="ASIN", how="left")
                 final_df.drop(columns=["ASIN"], inplace=True)
 
                 # 3. Filter brands
@@ -2164,27 +2165,26 @@ with tabs[13]:
                 # 10. With GST Amount Fees
                 final_df["With GST Amount Fees"] = (final_df["Amazon Fees"] / 1.18).round(2)
 
-                # 11. Purchase Price & Purchase Cost
-                pm_cp_lookup = inalsa_pm.iloc[:, [0, 9]].copy()
-                pm_cp_lookup.columns = ["ASIN", "Purchase Price"]
+                # 11. Base PM & As Per Qty Base
+                pm_cp_lookup = pm_raw.iloc[:, [0, 9]].copy()
+                pm_cp_lookup.columns = ["ASIN", "Base PM"]
                 final_df = final_df.merge(pm_cp_lookup, left_on="Asin", right_on="ASIN", how="left")
                 final_df.drop(columns=["ASIN"], inplace=True, errors="ignore")
 
-                final_df["Purchase Price"] = pd.to_numeric(final_df["Purchase Price"], errors="coerce").fillna(0)
+                final_df["Base PM"] = pd.to_numeric(final_df["Base PM"], errors="coerce").fillna(0)
                 final_df["Quantity"] = pd.to_numeric(final_df["Quantity"], errors="coerce").fillna(0)
-                final_df["Purchase Cost"] = (final_df["Purchase Price"] * final_df["Quantity"]).round(2)
-                final_df["Purchase Cost"] = pd.to_numeric(final_df["Purchase Cost"], errors="coerce").fillna(0)
+                final_df["As Per Qty Base"] = (final_df["Base PM"] * final_df["Quantity"]).round(2)
 
-                # 12. Base PM, Gross & Net Margin, Agreed Margin
-                final_df["Base PM"] = (final_df["Purchase Cost"] * 1.18).round(2)
-                final_df["Gross Margin"] = (final_df["Tax Exclusive Gross"] - final_df["Base PM"]).round(2)
+                # 12. Purchase Cost, Gross & Net Margin, Agreed Margin
+                final_df["Purchase Cost"] = (final_df["As Per Qty Base"] * 1.18).round(2)
+                final_df["Gross Margin"] = (final_df["Tax Exclusive Gross"] - final_df["As Per Qty Base"]).round(2)
                 final_df["Net Margin"] = (final_df["Gross Margin"] + final_df["With GST Amount Fees"]).round(2)
                 final_df["Agreed Margin"] = (final_df["Tax Exclusive Gross"] * 0.04).round(2)
-                final_df["Amount of CN"] = (final_df["Agreed Margin"] - final_df["Net Margin"]).round(2)
+                final_df["Amount of CN"] = (final_df["Net Margin"] - final_df["Agreed Margin"]).round(2)
 
                 # 13. Grand Total row
                 numeric_cols_final = final_df.select_dtypes(include="number").columns
-                total_row_inalsa = {col: None for col in final_df.columns}
+                total_row_inalsa = {col: "" for col in final_df.columns}
                 total_row_inalsa["Seller Gstin"] = "Grand Total"
                 for col in numeric_cols_final:
                     total_row_inalsa[col] = final_df[col].sum()
@@ -2199,8 +2199,7 @@ with tabs[13]:
                 # 14. Storage fees
                 inalsa_storage_csv.seek(0)
                 storage_df = pd.read_csv(inalsa_storage_csv)
-
-                storage_df = storage_df.merge(pm_lookup, left_on="asin", right_on="ASIN", how="left")
+                storage_df = storage_df.merge(pm_brand_lookup, left_on="asin", right_on="ASIN", how="left")
                 storage_df.drop(columns=["ASIN"], inplace=True, errors="ignore")
                 storage_df = storage_df[storage_df["Brand"].isin(["Inalsa", "Taurus"])]
 
@@ -2213,34 +2212,47 @@ with tabs[13]:
                 storage_fees = total_storage_without_gst
 
                 # 15. CN Summary
-                total_abc = gross_margin + amazon_fees + storage_fees
-                credit_note_amount = minimum_margin - total_abc
+                total_abc = round(gross_margin + amazon_fees + storage_fees, 2)
+                credit_note_amount = round(minimum_margin - total_abc, 2)
 
                 cn_summary = pd.DataFrame({
                     "Particulars": [
                         "Net Sales", "Minimum Margin (4%)", "a. Gross Margin", "b. Amazon Fees (Without GST)",
                         "c. Storage Fees (Without GST)", "Total (a+b+c)", "Credit Note Amount",
+                        "Cost of Operation / Sale",
                     ],
                     "Amount (₹)": [
                         round(float(net_sales), 2), round(float(minimum_margin), 2), round(float(gross_margin), 2),
                         round(float(amazon_fees), 2), round(float(storage_fees), 2), round(float(total_abc), 2),
                         round(float(credit_note_amount), 2),
+                        round(float(credit_note_amount) + float(gross_margin), 2),
                     ],
                 })
 
-                st.success(f"✅ Inalsa Secondary processed! Credit Note Amount: ₹{credit_note_amount:,.2f}")
+                # Helper to convert DF to Excel bytes
+                def to_excel_bytes_inalsa(df, sheet_name='Sheet1'):
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name=sheet_name)
+                    return output.getvalue()
 
-                # Display Results
+                st.success("✅ Processing complete!")
+
+                # KPI cards
                 st.subheader("📊 Summary")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Net Sales", format_currency(float(net_sales)))
                 c2.metric("Minimum Margin (4%)", format_currency(float(minimum_margin)))
                 c3.metric("Total (a+b+c)", format_currency(float(total_abc)))
-                c4.metric("💳 Credit Note", format_currency(float(credit_note_amount)))
+                c4.metric("💳 Credit Note Amount", format_currency(float(credit_note_amount)))
 
-                inalsa_tab1, inalsa_tab2, inalsa_tab3, inalsa_tab4 = st.tabs(["📋 CN Summary", "🗂️ Detailed Data", "🏭 Storage Fees", "⚠️ NaN Report"])
+                st.divider()
+
+                # Results Tabs
+                inalsa_tab1, inalsa_tab2, inalsa_tab3, inalsa_tab4 = st.tabs(["📋 Credit Note Summary", "🗂️ Detailed Transaction Data", "🏭 Storage Fee Summary", "⚠️ NaN Report"])
 
                 with inalsa_tab1:
+                    st.subheader("📋 Credit Note Summary")
                     def highlight_cn(row):
                         if row["Particulars"] == "Credit Note Amount":
                             return ["background-color: #d4edda; font-weight: bold"] * len(row)
@@ -2248,43 +2260,66 @@ with tabs[13]:
                             return ["background-color: #fff3cd"] * len(row)
                         return [""] * len(row)
                     st.dataframe(cn_summary.style.apply(highlight_cn, axis=1), use_container_width=True, hide_index=True)
-                    st.download_button("📥 Download CN Summary", convert_to_excel(cn_summary, 'Summary'), "inalsa_cn_summary.xlsx")
                 
                 with inalsa_tab2:
+                    st.subheader("🗂️ Detailed Transaction Data")
                     display_cols = [c for c in [
                         "Seller Gstin", "Invoice Number", "Invoice Date", "Transaction Type",
                         "Order Id", "Asin", "Brand", "Quantity", "Invoice Amount",
                         "Tax Exclusive Gross", "Total Tax Amount", "Amazon Fees",
-                        "With GST Amount Fees", "Purchase Cost", "Base PM",
+                        "With GST Amount Fees", "Base PM", "As Per Qty Base", "Purchase Cost",
                         "Gross Margin", "Net Margin", "Agreed Margin", "Amount of CN",
                     ] if c in final_with_total.columns]
-                    st.dataframe(final_with_total[display_cols], use_container_width=True, height=400)
-                    st.download_button("📥 Download Detailed Data", convert_to_excel(final_with_total[display_cols], 'Data'), "inalsa_detailed.xlsx")
+                    with st.expander("Show / Hide Full Table", expanded=False):
+                        st.dataframe(final_with_total[display_cols], use_container_width=True)
                 
                 with inalsa_tab3:
+                    st.subheader("🏭 Storage Fee Summary")
                     st.markdown(f"- **Total Storage Fee (with GST):** {format_currency(total_storage_fee)}")
                     st.markdown(f"- **Total Storage Fee (without GST):** {format_currency(abs(float(total_storage_without_gst)))}")
                     storage_display_cols = [c for c in [
                         "asin", "fnsku", "product-name", "fulfillment-center",
                         "estimated-monthly-storage-fee", "Brand",
                     ] if c in storage_df.columns]
-                    st.dataframe(storage_df[storage_display_cols], use_container_width=True, height=400)
-                    st.download_button("📥 Download Storage Data", convert_to_excel(storage_df[storage_display_cols], 'Storage'), "inalsa_storage.xlsx")
+                    with st.expander("Show Storage Data", expanded=False):
+                        st.dataframe(storage_df[storage_display_cols], use_container_width=True)
                 
                 with inalsa_tab4:
-                    st.markdown(f"**{len(nan_product_sales_df):,} rows** have no matching data in the Unified Transaction file (i.e. product sales is NaN). Excluded from calculation.")
+                    st.subheader("⚠️ NaN Report — Orders Not Found in Unified Transaction CSV")
+                    st.markdown(f"**{len(nan_product_sales_df):,} rows** have no matching data in the Unified Transaction file (i.e. product sales is NaN). These are excluded from the Credit Note calculation.")
                     nan_display_cols = [c for c in [
                         "Seller Gstin", "Invoice Number", "Invoice Date", "Transaction Type",
                         "Order Id", "Asin", "Brand", "Quantity", "Invoice Amount",
                         "Tax Exclusive Gross", "Total Tax Amount",
                     ] if c in nan_product_sales_df.columns]
-                    st.dataframe(nan_product_sales_df[nan_display_cols], use_container_width=True, height=400)
-                    st.download_button("📥 Download NaN Report", convert_to_excel(nan_product_sales_df[nan_display_cols], 'NaN Report'), "inalsa_nan_report.xlsx")
+                    with st.expander(f"Show NaN Report ({len(nan_product_sales_df):,} rows)", expanded=False):
+                        st.dataframe(nan_product_sales_df[nan_display_cols], use_container_width=True)
 
-                # Combined Summary
-                # Note: The combined summary looks for support as a positive metric. Since this is a "Credit Note Amount", we use it as the Support value.
-                inalsa_combined_df = pd.DataFrame({"Brand": ["Inalsa/Taurus (Secondary)"], "Inalsa Sec CN Amount": [credit_note_amount]})
-                combined_results.append(inalsa_combined_df)
+                st.divider()
+                st.subheader("⬇️ Download Results")
+                col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
+                with col_dl1:
+                    st.download_button("📥 Download CN Summary (Excel)", to_excel_bytes_inalsa(cn_summary, 'Summary'), "inalsa_cn_summary.xlsx")
+                with col_dl2:
+                    st.download_button("📥 Download Detailed Report (Excel)", to_excel_bytes_inalsa(final_with_total[display_cols], 'Data'), "inalsa_detailed.xlsx")
+                with col_dl3:
+                    st.download_button("📥 Download Storage Report (Excel)", to_excel_bytes_inalsa(storage_df[storage_display_cols], 'Storage'), "inalsa_storage.xlsx")
+                with col_dl4:
+                    st.download_button("📥 Download NaN Report (Excel)", to_excel_bytes_inalsa(nan_product_sales_df[nan_display_cols], 'NaN Report'), "inalsa_nan_report.xlsx")
+
+                # Combined Summary Integration
+                brand_sales = final_df.groupby("Brand")["Tax Exclusive Gross"].sum().reset_index()
+                total_brand_sales = brand_sales["Tax Exclusive Gross"].sum()
+                
+                for index, row in brand_sales.iterrows():
+                    b_name = row["Brand"]
+                    b_share = row["Tax Exclusive Gross"] / total_brand_sales if total_brand_sales != 0 else 0
+                    b_support = credit_note_amount * b_share
+                    
+                    combined_results.append(pd.DataFrame({
+                        "Brand": [b_name],
+                        "Price Support": [b_support]
+                    }))
 
         except Exception as e:
             st.error(f"❌ Error processing Inalsa Secondary: {str(e)}")
@@ -2952,7 +2987,7 @@ with tabs[21]:
             import traceback
             st.code(traceback.format_exc())
     else:
-        st.warning("Please upload Current Month Payout, FBA Returns CSV, and PM file.")
+        st.warning("Please upload FBA Transaction CSV, FBA Returns CSV, and PM file.")
 
 # ==========================================
 # TAB 25: REVERSE LOGISTIC SELLER
@@ -3055,7 +3090,7 @@ with tabs[22]:
             import traceback
             st.code(traceback.format_exc())
     else:
-        st.warning("Please upload 1 to till Date Payment File, QWTT Returns CSV, PM, and Working Sheet 2.")
+        st.warning("Please upload Seller Transaction CSV, QWTT Returns CSV, PM, and Working Sheet 2.")
 
 
 
