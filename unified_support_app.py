@@ -1025,7 +1025,7 @@ with tabs[3]:
             col_b.write("**Base Amount (excl. GST)**")
             col_b.bar_chart(f_pivot.set_index("Brand")["Base Amount"])
             
-            combined_results.append(f_pivot[["Brand", "Freebies Discount"]].rename(columns={"Freebies Discount": "Freebies Support"}))
+            combined_results.append(f_pivot[["Brand", "Freebies Discount"]].rename(columns={"Freebies Discount": "Freebies"}))
     else:
         st.warning("Please upload both Order TXT and PM file for Freebies analysis.")
 
@@ -1113,6 +1113,7 @@ with tabs[4]:
             with n_tab1:
                 st.subheader("Brand-wise Summary")
                 n_pivot_brand = n_df.groupby("Brand")["total"].sum().reset_index()
+                n_pivot_brand["total"] = n_pivot_brand["total"].abs()
                 
                 grand_total_n = n_pivot_brand["total"].sum()
                 summary_n = pd.DataFrame({"Brand": ["Grand Total"], "total": [grand_total_n]})
@@ -1249,7 +1250,7 @@ with tabs[5]:
                     st.download_button("📥 Download Pivot Table", convert_to_excel(a_pivot_disp, 'Ads Pivot'), "ads_pivot_table.xlsx")
                     
                     st.bar_chart(a_pivot.set_index("Brand")["Total Amount (incl. GST)"])
-                    combined_results.append(a_pivot[["Brand", "Total Amount (incl. GST)"]].rename(columns={"Total Amount (incl. GST)": "Advertising support"}))
+                    combined_results.append(a_pivot[["Brand", "Total Amount (incl. GST)"]].rename(columns={"Total Amount (incl. GST)": "Advertising Support"}))
                 else:
                     st.warning("Please upload Portfolio Report to generate pivot table.")
         else:
@@ -1333,7 +1334,7 @@ with tabs[6]:
             )
             st.download_button("📥 Download Brand Summary", convert_to_excel(rl_pivot_disp, 'RL Brand Pivot'), "rl_brand_summary.xlsx")
             
-            combined_results.append(rl_pivot[["Brand", "total"]].rename(columns={"total": "Replacement charges"}))
+            combined_results.append(rl_pivot[["Brand", "total"]].copy().assign(total=lambda x: -x["total"]).rename(columns={"total": "Replacement charges"}))
 
         with rl_tab2:
             st.subheader("Brand Manager-wise Replacement Logistic Summary")
@@ -2771,7 +2772,7 @@ with tabs[18]:
                 st.dataframe(make_arrow_safe(st_piv_disp), use_container_width=True)
                 st.download_button("📥 Download Storage Pivot", st_piv_disp.to_csv(index=False).encode(), "storage_brand_pivot.csv")
                 
-                combined_results.append(st_piv.rename(columns={"Storage Fee": "Storage Charges"}))
+                combined_results.append(st_piv.copy().assign(**{"Storage Fee": -st_piv["Storage Fee"]}).rename(columns={"Storage Fee": "Storage Charges"}))
                 
             with st_tab2:
                 st.subheader("Full Storage Detail")
@@ -2975,7 +2976,7 @@ with tabs[21]:
                     st.dataframe(make_arrow_safe(rf_piv_disp), use_container_width=True)
                     st.download_button("📥 Download RLC Pivot", rf_piv_disp.to_csv(index=False).encode(), "rlc_fba_pivot.csv")
                     
-                    combined_results.append(rf_piv)
+                    combined_results.append(rf_piv.copy().assign(**{"Reverse logistics FBA": -rf_piv["Reverse logistics FBA"]}))
                     
                 with rf_tab2:
                     st.subheader("Full Reverse Logistic Detail")
@@ -3078,7 +3079,7 @@ with tabs[22]:
                     st.dataframe(make_arrow_safe(rs_piv_disp), use_container_width=True)
                     st.download_button("📥 Download Seller RLC Pivot", rs_piv_disp.to_csv(index=False).encode(), "rlc_seller_pivot.csv")
                     
-                    combined_results.append(rs_piv)
+                    combined_results.append(rs_piv.copy().assign(**{"Reverse logistics Seller Flex Reverse": -rs_piv["Reverse logistics Seller Flex Reverse"]}))
                     
                 with rs_tab2:
                     st.subheader("Full Seller Reverse Logistic Detail")
@@ -3464,18 +3465,16 @@ with tabs[0]:
         # List of columns to ensure presence and order
         requested_cols = [
             "Net Sales", "Turn Over", "Payout", "Cost of goods sold", "Gross PnL Level 1",
-            "Price Support", "Coupon Support", "NCEMI Support", "Freebies Support", 
-            "Exchange support", "Advertising support", "Gross PnL level 2",
+            "Price Support", "Coupon Support", "NCEMI Support", "Freebies", 
+            "Exchange Support", "Advertising Support", "Gross PnL level 2", "P&L%",
             "Reimbursement FBA", "Reimbursement Seller Flex (Safe T Claim)", "Total Reimbursement",
             "Reverse logistics FBA", "Reverse logistics Seller Flex Reverse", "Total Reverse",
             "Replacement charges", "Storage Charges", "Admin @1%", 
             "Gross PnL level 3", "Interest %", "Interest", "Loss in damages FBA", "Loss in damages Seller Flex", 
-            "Loss in damages Total", "Damage Resolve %", "Actual Loss of Damage", "Net PnL", "Current Inventory", "Cost Of Interest Rate On Good", "Current damages", "Profit in %"
+            "Loss in damages Total", "Damage Resolve %", "Actual Loss of Damage", "Net PnL", "Net PnL%", "Current Inventory", "Cost Of Interest Rate On Good", "Current damages", "Net", "Profit in %"
         ]
         
-        # Align naming for Exchange Support (fix case)
-        if "Exchange Support" in final_df.columns:
-            final_df.rename(columns={"Exchange Support": "Exchange support"}, inplace=True)
+        # Align naming for Exchange Support (deprecated old logic)
 
         for col in requested_cols:
             if col not in final_df.columns:
@@ -3484,25 +3483,32 @@ with tabs[0]:
         final_df = final_df.fillna(0)
         
         # Calculations
+        final_df["Gross PnL Level 1"] = final_df["Payout"] - final_df["Cost of goods sold"]
         final_df["Total Reimbursement"] = final_df["Reimbursement FBA"] + final_df["Reimbursement Seller Flex (Safe T Claim)"]
         final_df["Total Reverse"] = final_df["Reverse logistics FBA"] + final_df["Reverse logistics Seller Flex Reverse"]
         
         final_df["Gross PnL level 2"] = (
             final_df["Gross PnL Level 1"] + 
             final_df["Price Support"] + 
-            final_df["Coupon Support"] + 
             final_df["NCEMI Support"] + 
-            final_df["Freebies Support"] + 
-            final_df["Exchange support"] + 
-            final_df["Advertising support"]
+            final_df["Freebies"] + 
+            final_df["Exchange Support"] + 
+            final_df["Advertising Support"]
         )
         
+        final_df["P&L%"] = 0.0
+        mask_turnover = final_df["Turn Over"] != 0
+        final_df.loc[mask_turnover, "P&L%"] = (final_df.loc[mask_turnover, "Gross PnL level 2"] / final_df.loc[mask_turnover, "Turn Over"]) * 100
+
+        final_df["Admin @1%"] = -final_df["Turn Over"] * 0.01
+
         final_df["Gross PnL level 3"] = (
             final_df["Gross PnL level 2"] + 
-            final_df["Total Reimbursement"] - 
-            final_df["Total Reverse"] - 
-            final_df["Replacement charges"] - 
-            final_df["Storage Charges"]
+            final_df["Total Reimbursement"] + 
+            final_df["Total Reverse"] + 
+            final_df["Replacement charges"] + 
+            final_df["Storage Charges"] +
+            final_df["Admin @1%"]
         )
         
         final_df["Loss in damages Total"] = final_df["Loss in damages FBA"] + final_df["Loss in damages Seller Flex"]
@@ -3565,13 +3571,19 @@ with tabs[0]:
             final_df["Interest %"] = 0.0
         final_df["Interest %"] = final_df["Interest %"].fillna(0)
         
-        final_df["Net PnL"] = final_df["Gross PnL level 3"] - final_df["Interest"] - final_df["Loss in damages Total"]
+        final_df["Net PnL"] = final_df["Gross PnL level 3"] - final_df["Actual Loss of Damage"]
         
-        final_df["Cost Of Interest Rate On Good"] = final_df["Current Inventory"] * (final_df["Interest %"] / 100)
+        final_df["Net PnL%"] = 0.0
+        mask_cogs = final_df["Cost of goods sold"] != 0
+        final_df.loc[mask_cogs, "Net PnL%"] = (final_df.loc[mask_cogs, "Net PnL"] / final_df.loc[mask_cogs, "Cost of goods sold"]) * 100
+        
+        final_df["Cost Of Interest Rate On Good"] = -final_df["Current Inventory"] * (final_df["Interest %"] / 100)
+        
+        final_df["Net"] = final_df["Net PnL"] + final_df["Cost Of Interest Rate On Good"]
         
         # Profit %
-        mask_sales = final_df["Net Sales"] != 0
-        final_df.loc[mask_sales, "Profit in %"] = (final_df.loc[mask_sales, "Net PnL"] / final_df.loc[mask_sales, "Net Sales"]) * 100
+        mask_turnover = final_df["Turn Over"] != 0
+        final_df.loc[mask_turnover, "Profit in %"] = (final_df.loc[mask_turnover, "Net"] / final_df.loc[mask_turnover, "Turn Over"]) * 100
         
         # Select and Reorder
         final_df = final_df[["Brand"] + requested_cols]
@@ -3607,18 +3619,31 @@ with tabs[0]:
         total_loss = summary_row["Loss in damages Total"].iloc[0]
         summary_row["Damage Resolve %"] = (total_reimb / total_loss * 100) if total_loss != 0 else 0
         
+        total_level2 = summary_row["Gross PnL level 2"].iloc[0]
+        total_turnover = summary_row["Turn Over"].iloc[0]
+        summary_row["P&L%"] = (total_level2 / total_turnover * 100) if total_turnover != 0 else 0
+        
         # Recalculate Interest % for total row based on Total Interest / Total Turn Over
         total_interest = summary_row["Interest"].iloc[0]
         total_turnover = summary_row["Turn Over"].iloc[0]
         summary_row["Interest %"] = (total_interest / total_turnover * 100) if total_turnover != 0 else 0
         
+        total_net_pnl = summary_row["Net PnL"].iloc[0]
+        total_cogs = summary_row["Cost of goods sold"].iloc[0]
+        summary_row["Net PnL%"] = (total_net_pnl / total_cogs * 100) if total_cogs != 0 else 0
+        
+        total_coi = summary_row["Cost Of Interest Rate On Good"].iloc[0]
+        summary_row["Net"] = total_net_pnl + total_coi
+        
         final_df = pd.concat([final_df, summary_row], ignore_index=True)
         
         # Display with dynamic coloring
-        format_dict = {c: format_currency for c in requested_cols if c not in ["Profit in %", "Damage Resolve %", "Interest %"]}
+        format_dict = {c: format_currency for c in requested_cols if c not in ["Profit in %", "Damage Resolve %", "Interest %", "P&L%", "Net PnL%"]}
         format_dict["Profit in %"] = "{:.2f}%"
         format_dict["Damage Resolve %"] = "{:.2f}%"
         format_dict["Interest %"] = "{:.2f}%"
+        format_dict["P&L%"] = "{:.2f}%"
+        format_dict["Net PnL%"] = "{:.2f}%"
         
         st.dataframe(
             final_df.style.format(format_dict)
