@@ -720,6 +720,7 @@ with st.sidebar.expander("📊 Sales Analysis"):
                                             help="Separate Transaction Report for Refunds (skips 11 rows)")
     interest_damage_file = st.file_uploader("Interest & Damage Resolve File", type=["xlsx", "xls"], key="int_dam_up",
                                             help="Optional: Interest & Damage Resolve.xlsx for vlookups")
+    inbound_pickup_file = st.file_uploader("Inbound Pick Up Service (Monthly)", type=["xlsx", "csv", "xls"], key="inbound_up")
 
 with st.sidebar.expander("🏥 Current Damage"):
     st.caption("Inventory Report + Product Attributes CSV")
@@ -745,7 +746,7 @@ if pm_file:
 # ==========================================
 st.title("🚀 Amazon Support Unified Dashboard")
 
-any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or bergner_secondary_orders_file or tramontina_secondary_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv or victorinox_support_file or victorinox_orders_file or current_inv_file or reimb_fba_file or reimb_seller_file or amazon_storage_file or loss_damage_fba_file or loss_damage_seller_file or rev_fba_txn_file or rev_fba_ret_file or rev_sel_txn_file or rev_sel_ret_file or rev_sel_ws_file or net_sale_txn_file or net_sale_refund_file or interest_damage_file or asin_months_file or dyson_promo_file or inv_rep_file or prod_attr_file)
+any_files = (pm_file or coupon_file or exchange_file or freebies_file or ncemi_payment_file or adv_files or rev_log_file or dyson_b2b_zips or dyson_b2c_zips or dyson_invoice_file or bergner_secondary_orders_file or tramontina_secondary_orders_file or wonderchef_orders_file or hafele_orders_file or panasonic_orders_file or inalsa_b2b_zips or inalsa_b2c_zips or inalsa_unified_csv or inalsa_storage_csv or victorinox_support_file or victorinox_orders_file or current_inv_file or reimb_fba_file or reimb_seller_file or amazon_storage_file or loss_damage_fba_file or loss_damage_seller_file or rev_fba_txn_file or rev_fba_ret_file or rev_sel_txn_file or rev_sel_ret_file or rev_sel_ws_file or net_sale_txn_file or net_sale_refund_file or interest_damage_file or asin_months_file or dyson_promo_file or inv_rep_file or prod_attr_file or inbound_pickup_file)
 
 
 
@@ -787,7 +788,7 @@ if not any_files:
             """, unsafe_allow_html=True)
     st.stop()
 
-tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🧮 Dyson", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary", "🔪 Victorinox Secondary", "📦 Current Inventory", "💰 Reimbursement FBA", "🛒 Reimbursement Seller", "🏭 Amazon Storage", "📉 Loss/Damage FBA", "🏬 Loss/Damage Seller", "📦 Reverse Logistic FBA", "🏬 Reverse Logistic Seller", "📊 Net Sale Analyzer", "🏥 Current Damage"])
+tabs = st.tabs(["🏠 Combined Summary", "🏷️ Coupon", "🔄 Exchange", "🎁 Freebies", "💳 NCEMI", "📢 Advertisement", "🔄 Replacement Logistic", "🧮 Dyson", "🏭 Bergner Secondary", "📦 Tramontina Secondary", "🍳 Wonderchef Secondary", "🍴 Hafele Secondary", "📺 Panasonic Secondary", "📦 Inalsa Secondary", "🔪 Victorinox Secondary", "📦 Current Inventory", "💰 Reimbursement FBA", "🛒 Reimbursement Seller", "🏭 Amazon Storage", "📉 Loss/Damage FBA", "🏬 Loss/Damage Seller", "📦 Reverse Logistic FBA", "🏬 Reverse Logistic Seller", "📊 Net Sale Analyzer", "🏥 Current Damage", "🚚 Inbound Pick Up Service"])
 
 
 
@@ -3443,6 +3444,72 @@ with tabs[24]:
         st.info("Please upload both Inventory Report and Product Attributes CSV files.")
 
 # ==========================================
+# TAB 26: INBOUND PICK UP SERVICE
+# ==========================================
+with tabs[25]:
+    st.header("🚚 Inbound Pick Up Service Analysis")
+    if inbound_pickup_file:
+        try:
+            if inbound_pickup_file.name.endswith(".csv"):
+                inbound_df = pd.read_csv(inbound_pickup_file)
+            else:
+                inbound_df = pd.read_excel(inbound_pickup_file)
+
+            inbound_df.columns = [str(c).strip() for c in inbound_df.columns]
+            
+            # Find brand and total columns
+            ib_brand_col = None
+            ib_total_col = None
+            for c in inbound_df.columns:
+                if c.lower() == "brand": ib_brand_col = c
+                if c.lower() == "total": ib_total_col = c
+            
+            # Fallback for total if not found exactly
+            if not ib_total_col:
+                for c in inbound_df.columns:
+                    if "total" in c.lower():
+                        ib_total_col = c
+                        break
+            
+            if not ib_brand_col and pm_df is not None:
+                # Try to map by ASIN or SKU if brand missing
+                asin_col = next((c for c in inbound_df.columns if "asin" in c.lower()), None)
+                sku_col = next((c for c in inbound_df.columns if "sku" in c.lower()), None)
+                if asin_col:
+                    inbound_df["Brand"] = inbound_df[asin_col].astype(str).map(brand_mapping)
+                elif sku_col:
+                    # Map via SKU from PM
+                    sku_pm_map = pm_df.drop_duplicates("SKU").set_index("SKU")["Brand"].to_dict()
+                    inbound_df["Brand"] = inbound_df[sku_col].astype(str).map(sku_pm_map)
+                ib_brand_col = "Brand"
+
+            if ib_brand_col and ib_total_col:
+                inbound_df[ib_total_col] = pd.to_numeric(inbound_df[ib_total_col], errors="coerce").fillna(0)
+                inbound_pivot = inbound_df.groupby(ib_brand_col)[ib_total_col].sum().reset_index()
+                inbound_pivot.columns = ["Brand", "Inbound Pick Up Service"]
+                
+                # Display Summary
+                col1, col2 = st.columns(2)
+                col1.metric("Total Brands", len(inbound_pivot))
+                col2.metric("Total Inbound Service Cost", format_currency(inbound_pivot["Inbound Pick Up Service"].sum()))
+                
+                st.subheader("📊 Brand-wise Inbound Pick Up Pivot View")
+                st.dataframe(inbound_pivot.style.format({"Inbound Pick Up Service": "₹{:,.2f}"}), use_container_width=True)
+                
+                st.download_button("📥 Download Inbound Pivot (CSV)", 
+                                   data=inbound_pivot.to_csv(index=False), 
+                                   file_name="inbound_pickup_pivot.csv",
+                                   key="inbound_dl_btn")
+                
+                combined_results.append(inbound_pivot)
+            else:
+                st.error("Could not find 'Brand' (or map it via ASIN/SKU) and 'Total' columns in the uploaded file.")
+        except Exception as e:
+            st.error(f"Error processing Inbound Pick Up: {e}")
+    else:
+        st.info("Please upload the Inbound Pick Up Service report to see analysis.")
+
+# ==========================================
 
 # FINAL COMBINED REPORT POPULATION
 
@@ -3462,11 +3529,14 @@ with tabs[0]:
         
         final_df["Brand"] = final_df["Brand"].fillna("Unknown/Unmapped")
         
+        # Safety group by Brand to ensure no duplicates after merges
+        final_df = final_df.groupby("Brand").sum(numeric_only=True).reset_index()
+
         # List of columns to ensure presence and order
         requested_cols = [
             "Net Sales", "Turn Over", "Payout", "Cost of goods sold", "Gross PnL Level 1",
             "Price Support", "Coupon Support", "NCEMI Support", "Freebies", 
-            "Exchange Support", "Advertising Support", "Gross PnL level 2", "P&L%",
+            "Exchange Support", "Advertising Support", "Inbound Pick Up Service", "Gross PnL level 2", "P&L%",
             "Reimbursement FBA", "Reimbursement Seller Flex (Safe T Claim)", "Total Reimbursement",
             "Reverse logistics FBA", "Reverse logistics Seller Flex Reverse", "Total Reverse",
             "Replacement charges", "Storage Charges", "Admin @1%", 
@@ -3493,7 +3563,8 @@ with tabs[0]:
             final_df["NCEMI Support"] + 
             final_df["Freebies"] + 
             final_df["Exchange Support"] + 
-            final_df["Advertising Support"]
+            final_df["Advertising Support"] +
+            final_df["Inbound Pick Up Service"]
         )
         
         final_df["P&L%"] = 0.0
