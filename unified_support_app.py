@@ -165,7 +165,7 @@ def to_excel_bytes_net(df: pd.DataFrame) -> bytes:
 @st.cache_data(show_spinner="Processing data…")
 def run_net_pipeline(csv_bytes: bytes, pm_bytes: bytes, refund_bytes: bytes, is_pm_csv: bool = False):
     # 1. Load transaction CSV
-    ns = pd.read_csv(io.BytesIO(csv_bytes), header=11, low_memory=False)
+    ns = pd.read_csv(io.BytesIO(csv_bytes), header=13, low_memory=False)
     ns.columns = ns.columns.str.lower()
     num_cols = ["quantity","product sales","total sales tax liable(gst before adjusting tcs)","total"]
     ns[num_cols] = ns[num_cols].replace(",","",regex=True)
@@ -209,11 +209,11 @@ def run_net_pipeline(csv_bytes: bytes, pm_bytes: bytes, refund_bytes: bytes, is_
     pivot["profit"] = pivot["total"] - pivot["cp as per qty"]
 
     # 5. Refund IDs
-    ref_ids_df = pd.read_csv(io.BytesIO(refund_bytes), header=11, usecols=["type","order id"], low_memory=False)
+    ref_ids_df = pd.read_csv(io.BytesIO(refund_bytes), header=13, usecols=["type","order id"], low_memory=False)
     refund_ids = set(ref_ids_df.loc[ref_ids_df["type"]=="Refund","order id"].dropna())
 
     # 6. Full refund rows
-    ref_full = pd.read_csv(io.BytesIO(refund_bytes), header=11, low_memory=False)
+    ref_full = pd.read_csv(io.BytesIO(refund_bytes), header=13, low_memory=False)
     ref_full = ref_full[ref_full["type"]=="Refund"].reset_index(drop=True)
 
     # 7. Split pivot
@@ -673,7 +673,7 @@ with st.sidebar.expander("📦 Inalsa Secondary"):
     inalsa_b2c_zips = st.file_uploader("B2C Report ZIP(s)", type=["zip"], key="inalsa_b2c_up", accept_multiple_files=True,
                                        help="Amazon B2C tax reports in ZIP format")
     inalsa_unified_csv = st.file_uploader("Unified Transaction CSV", type=["csv"], key="inalsa_unified_up",
-                                          help="Unified transaction report (header row 11)")
+                                          help="Unified transaction report (header row 13)")
     inalsa_storage_csv = st.file_uploader("Storage Fee CSV", type=["csv"], key="inalsa_storage_up",
                                           help="Storage fee report (e.g., 399153020430.csv)")
 
@@ -691,7 +691,7 @@ with st.sidebar.expander("🛒 Inventory & Reimbursements"):
     reimb_fba_file = st.file_uploader("Reimbursement (FBA) CSV", type=["csv"], key="reimb_fba_up",
                                       help="Amazon FBA reimbursement export (e.g. 'Or Reimbursement.csv')")
     reimb_seller_file = st.file_uploader("Reimbursement (Seller) CSV", type=["csv"], key="reimb_seller_up",
-                                         help="Monthly Unified Transaction export (skip 11 rows)")
+                                         help="Monthly Unified Transaction export (skip 13 rows)")
     amazon_storage_file = st.file_uploader("Storage Fees CSV", type=["csv"], key="storage_up",
                                             help="Amazon FBA storage fees export")
     loss_damage_fba_file = st.file_uploader("Loss/Damage (FBA) CSV", type=["csv"], key="loss_fba_up",
@@ -702,11 +702,11 @@ with st.sidebar.expander("🛒 Inventory & Reimbursements"):
 with st.sidebar.expander("📦 Reverse Logistics"):
     st.caption("FBA & Seller Reverse Logistics Analysis • Requires PM")
     rev_fba_txn_file = st.file_uploader("Current Month Payout", type=["csv"], key="rev_fba_txn_up",
-                                        help="Amazon Unified Transaction Report (skips 11 rows)")
+                                        help="Amazon Unified Transaction Report (skips 13 rows)")
     rev_fba_ret_file = st.file_uploader("FBA Returns CSV", type=["csv"], key="rev_fba_ret_up",
                                         help="Amazon FBA Returns Report")
     rev_sel_txn_file = st.file_uploader("1 to till Date Payment File", type=["csv"], key="rev_sel_txn_up",
-                                        help="Amazon Unified Transaction Report (skips 11 rows)")
+                                        help="Amazon Unified Transaction Report (skips 13 rows)")
     rev_sel_ret_file = st.file_uploader("Seller Returns Reconciliation CSV", type=["csv"], key="rev_sel_ret_up",
                                         help="QWTT Returns Reconciliation Report")
     rev_sel_ws_file = st.file_uploader("Working Sheet 2 Excel", type=["xlsx", "xls"], key="rev_sel_ws_up",
@@ -715,9 +715,9 @@ with st.sidebar.expander("📦 Reverse Logistics"):
 with st.sidebar.expander("📊 Sales Analysis"):
     st.caption("Net Sale & PnL Analysis • Requires PM")
     net_sale_txn_file = st.file_uploader("Net Sale Transaction CSV (Orders)", type=["csv"], key="net_sale_up",
-                                         help="Amazon Unified Transaction Report (skips 11 rows)")
+                                         help="Amazon Unified Transaction Report (skips 13 rows)")
     net_sale_refund_file = st.file_uploader("Net Sale Refund CSV", type=["csv"], key="net_sale_refund_up",
-                                            help="Separate Transaction Report for Refunds (skips 11 rows)")
+                                            help="Separate Transaction Report for Refunds (skips 13 rows)")
     interest_damage_file = st.file_uploader("Interest & Damage Resolve File", type=["xlsx", "xls"], key="int_dam_up",
                                             help="Optional: Interest & Damage Resolve.xlsx for vlookups")
     inbound_pickup_file = st.file_uploader("Inbound Pick Up Service (Monthly)", type=["xlsx", "csv", "xls"], key="inbound_up")
@@ -1267,7 +1267,7 @@ with tabs[6]:
     if rev_log_file and pm_file:
         with st.spinner("Processing Replacement Logistic files..."):
             # 1. Read CSV with header at row 12 (0-indexed: 11)
-            rl_df = pd.read_csv(rev_log_file, header=11, low_memory=False)
+            rl_df = pd.read_csv(rev_log_file, header=13, low_memory=False)
 
             # 2. Filter: type == "Order" AND product sales == 0
             rl_df = rl_df[
@@ -2677,7 +2677,7 @@ with tabs[17]:
     st.header("🛒 Reimbursement - Seller Analysis")
     if reimb_seller_file and pm_file:
         try:
-            r_sel = pd.read_csv(reimb_seller_file, skiprows=11)
+            r_sel = pd.read_csv(reimb_seller_file, skiprows=13)
             r_sel = r_sel[r_sel["type"].isin(["SAFE-T Reimbursement", "Reimbursements"])].copy()
             
             pm_full = pm_df.copy()
@@ -2906,7 +2906,7 @@ with tabs[21]:
         try:
             with st.spinner("Processing FBA Reverse Logistics..."):
                 # 1. Load Transaction CSV (skip 11 rows)
-                txn_fba = pd.read_csv(rev_fba_txn_file, skiprows=11, thousands=",", low_memory=False)
+                txn_fba = pd.read_csv(rev_fba_txn_file, skiprows=13, thousands=",", low_memory=False)
                 
                 # 2. Orders Pivot
                 orders_fba = txn_fba[(txn_fba["type"] == "Order") & (txn_fba["product sales"] != 0)].copy()
@@ -3000,7 +3000,7 @@ with tabs[22]:
         try:
             with st.spinner("Processing Seller Reverse Logistics..."):
                 # 1. Load Transaction CSV (skip 11)
-                txn_sel = pd.read_csv(rev_sel_txn_file, skiprows=11, thousands=",", low_memory=False)
+                txn_sel = pd.read_csv(rev_sel_txn_file, skiprows=13, thousands=",", low_memory=False)
                 
                 # 2. Orders Pivot
                 orders_sel = txn_sel[(txn_sel["type"] == "Order") & (txn_sel["product sales"] != 0)].copy()
