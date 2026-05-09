@@ -1038,7 +1038,7 @@ with tabs[4]:
     if ncemi_payment_file and pm_file:
         try:
             # Payment CSV Loading
-            p_df = pd.read_csv(ncemi_payment_file, skiprows=11)
+            p_df = pd.read_csv(ncemi_payment_file, skiprows=13)
             
             # Cleaning numeric columns like the new support_ncemi.py
             pay_num_cols = ["other transaction fees", "other", "total", "product sales"]
